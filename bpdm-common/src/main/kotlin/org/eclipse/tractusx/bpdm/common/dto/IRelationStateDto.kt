@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2021 Contributors to the Eclipse Foundation
+ * Copyright (c) 2021,2024 Contributors to the Eclipse Foundation
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information regarding copyright ownership.
@@ -17,20 +17,22 @@
  * SPDX-License-Identifier: Apache-2.0
  ******************************************************************************/
 
-package org.eclipse.tractusx.bpdm.pool.service
+package org.eclipse.tractusx.bpdm.common.dto
 
-import org.eclipse.tractusx.bpdm.pool.dto.UpsertResult
-import org.eclipse.tractusx.bpdm.pool.entity.LegalEntityDb
-import org.eclipse.tractusx.bpdm.pool.entity.RelationDb
-import org.eclipse.tractusx.bpdm.pool.entity.RelationStateDb
+import io.swagger.v3.oas.annotations.media.Schema
+import org.eclipse.tractusx.bpdm.common.dto.openapidescription.RelationStateDescription
+import org.eclipse.tractusx.bpdm.common.model.BusinessStateType
+import java.time.Instant
 
-interface IRelationUpsertStrategyService {
+@Schema(description = RelationStateDescription.header)
+interface IRelationStateDto{
 
-    fun upsertRelation(upsertRequest: UpsertRequest): UpsertResult<RelationDb>
+    @get:Schema(description = RelationStateDescription.validFrom)
+    val validFrom: Instant?
 
-    data class UpsertRequest(
-        val source: LegalEntityDb,
-        val target: LegalEntityDb,
-        val states: Collection<RelationStateDb>
-    )
+    @get:Schema(description = RelationStateDescription.validTo)
+    val validTo: Instant?
+
+    @get:Schema(description = RelationStateDescription.type)
+    val type: BusinessStateType
 }

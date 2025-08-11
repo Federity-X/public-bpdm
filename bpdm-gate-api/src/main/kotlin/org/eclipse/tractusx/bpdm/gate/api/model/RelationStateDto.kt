@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2021 Contributors to the Eclipse Foundation
+ * Copyright (c) 2021,2024 Contributors to the Eclipse Foundation
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information regarding copyright ownership.
@@ -17,45 +17,21 @@
  * SPDX-License-Identifier: Apache-2.0
  ******************************************************************************/
 
-package org.eclipse.tractusx.orchestrator.api.model
+package org.eclipse.tractusx.bpdm.gate.api.model
 
 import io.swagger.v3.oas.annotations.media.Schema
 import org.eclipse.tractusx.bpdm.common.dto.openapidescription.RelationStateDescription
 import org.eclipse.tractusx.bpdm.common.model.BusinessStateType
 import java.time.Instant
 
-@Schema(description = "The business partner relations data to be processed ")
-data class BusinessPartnerRelations(
-    @Schema(description = "The type of relation between the business partners")
-    val relationType: RelationType,
-    @Schema(description = "The business partner from which the relation emerges (the source)")
-    val businessPartnerSourceBpnl: String,
-    @Schema(description = "The business partner to which this relation goes (the target)")
-    val businessPartnerTargetBpnl: String,
-    @Schema(description = RelationStateDescription.header)
-    val states : Collection<RelationStateDto>
-) {
-    companion object {
-        val empty = BusinessPartnerRelations(
-            relationType = RelationType.IsAlternativeHeadquarterFor, // or a default type
-            businessPartnerSourceBpnl = "",
-            businessPartnerTargetBpnl = "",
-            states = emptyList()
-        )
-    }
-}
-
-enum class RelationType {
-    IsAlternativeHeadquarterFor,
-    IsManagedBy,
-    IsOwnedBy
-}
-
 data class RelationStateDto(
+
     @Schema(description = RelationStateDescription.validFrom)
     val validFrom: Instant,
+
     @Schema(description = RelationStateDescription.validTo)
     val validTo: Instant,
+
     @Schema(description = RelationStateDescription.type)
     val type: BusinessStateType
 )

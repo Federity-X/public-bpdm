@@ -19,13 +19,16 @@
 
 package org.eclipse.tractusx.bpdm.pool.service
 
+import org.eclipse.tractusx.bpdm.common.model.BusinessStateType
 import org.eclipse.tractusx.bpdm.pool.api.model.RelationType
 import org.eclipse.tractusx.bpdm.pool.dto.UpsertResult
 import org.eclipse.tractusx.bpdm.pool.entity.LegalEntityDb
 import org.eclipse.tractusx.bpdm.pool.entity.RelationDb
+import org.eclipse.tractusx.bpdm.pool.entity.RelationStateDb
 import org.eclipse.tractusx.bpdm.pool.exception.BpdmValidationException
 import org.eclipse.tractusx.bpdm.pool.repository.RelationRepository
 import org.springframework.stereotype.Service
+import java.time.Instant
 
 @Service
 class OwnedByRelationUpsertService(
@@ -33,7 +36,17 @@ class OwnedByRelationUpsertService(
     private val relationRepository: RelationRepository
 ): IRelationUpsertStrategyService {
 
+    companion object{
+        private val alwaysActiveState = RelationStateDb(
+            validFrom = Instant.parse("1970-01-01T00:00:00Z"),
+            validTo = Instant.parse("9999-12-31T23:59:59Z"),
+            type = BusinessStateType.ACTIVE
+        )
+    }
+
     override fun upsertRelation(upsertRequest: IRelationUpsertStrategyService.UpsertRequest): UpsertResult<RelationDb> {
+        if(!isAlwaysActive(upsertRequest)) throw BpdmValidationException("Invalid 'IsOwnedBy' relation: This relation type does not support any validity constraints.")
+
         val proposedSource = upsertRequest.source
         val proposedTarget = upsertRequest.target
 
@@ -42,7 +55,7 @@ class OwnedByRelationUpsertService(
 
 
         val result = relationUpsertService.upsertRelation(
-            RelationUpsertService.UpsertRequest(proposedSource, proposedTarget, RelationType.IsOwnedBy)
+            RelationUpsertService.UpsertRequest(proposedSource, proposedTarget, RelationType.IsOwnedBy, upsertRequest.states)
         )
 
         return result
@@ -85,4 +98,9 @@ class OwnedByRelationUpsertService(
 
         return allParents
     }
+
+    private fun isAlwaysActive(upsertRequest: IRelationUpsertStrategyService.UpsertRequest): Boolean{
+        return upsertRequest.states.singleOrNull()?.let { it == alwaysActiveState } ?: false
+    }
+
 }
