@@ -72,7 +72,7 @@ jobs:
           hide-progress: false
           exit-code: "1"
           limit-severities-for-sarif: true
-          version: "v0.69.2"
+          version: "v0.69.3"
 
       - name: Upload Trivy scan results to GitHub Security tab
         if: always()
