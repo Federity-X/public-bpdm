@@ -45,10 +45,10 @@ jobs:
       fail-fast: false
       matrix:
         app: [
-          pool
-          # gate,
-          # orchestrator,
-          # cleaning-service-dummy,
+          pool,
+          gate,
+          orchestrator,
+          cleaning-service-dummy,
         ]
     steps:
       - name: Checkout repository
