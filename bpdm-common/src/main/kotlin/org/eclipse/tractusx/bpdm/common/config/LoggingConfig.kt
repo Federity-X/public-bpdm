@@ -30,13 +30,6 @@ import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
 import java.util.*
 
-/**
- * Sanitizes a string for safe inclusion in log entries by replacing ASCII control characters
- * (including newlines, carriage returns, tabs) that could be used for log injection/forging attacks.
- */
-private fun sanitizeForLog(input: String): String =
-    input.replace(Regex("[\\p{Cntrl}]"), "_")
-
 @Component
 class UserLoggingFilter(
     private val logConfigProperties: LogConfigProperties
@@ -46,9 +39,11 @@ class UserLoggingFilter(
 
     override fun doFilterInternal(request: HttpServletRequest, response: HttpServletResponse, filterChain: FilterChain) {
         val userName = request.userPrincipal?.name ?: logConfigProperties.unknownUser
-        val sanitizedUserName = sanitizeForLog(userName)
-        val sanitizedRequest = sanitizeForLog(request.requestURI)
-        val sanitizedMethod = sanitizeForLog(request.method)
+        // Sanitize user-controlled values inline to prevent log injection (CWE-117).
+        // Stripping control characters that could forge log entries.
+        val sanitizedUserName = userName.replace("\r", "_").replace("\n", "_").replace("\t", "_")
+        val sanitizedRequest = request.requestURI.replace("\r", "_").replace("\n", "_").replace("\t", "_")
+        val sanitizedMethod = request.method.replace("\r", "_").replace("\n", "_").replace("\t", "_")
 
         withLoggingContext(
             "user" to sanitizedUserName,
