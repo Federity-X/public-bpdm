@@ -23,6 +23,7 @@ import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import mu.withLoggingContext
+import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import org.springframework.core.task.TaskDecorator
 import org.springframework.stereotype.Component
@@ -41,6 +42,8 @@ class UserLoggingFilter(
     private val logConfigProperties: LogConfigProperties
 ) : OncePerRequestFilter() {
 
+    private val log = LoggerFactory.getLogger(UserLoggingFilter::class.java)
+
     override fun doFilterInternal(request: HttpServletRequest, response: HttpServletResponse, filterChain: FilterChain) {
         val userName = request.userPrincipal?.name ?: logConfigProperties.unknownUser
         val sanitizedUserName = sanitizeForLog(userName)
@@ -50,9 +53,9 @@ class UserLoggingFilter(
         withLoggingContext(
             "user" to sanitizedUserName,
         ) {
-            logger.info("User '${sanitizedUserName}' requests ${sanitizedMethod} ${sanitizedRequest}...")
+            log.info("User '{}' requests {} {}...", sanitizedUserName, sanitizedMethod, sanitizedRequest)
             filterChain.doFilter(request, response)
-            logger.info("Response with status ${response.status}")
+            log.info("Response with status {}", response.status)
         }
     }
 }
