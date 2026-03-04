@@ -31,11 +31,11 @@ import org.springframework.web.filter.OncePerRequestFilter
 import java.util.*
 
 /**
- * Sanitizes a string for safe inclusion in log entries by replacing control characters
- * (newlines, carriage returns, tabs) that could be used for log injection/forging attacks.
+ * Sanitizes a string for safe inclusion in log entries by replacing ASCII control characters
+ * (including newlines, carriage returns, tabs) that could be used for log injection/forging attacks.
  */
 private fun sanitizeForLog(input: String): String =
-    input.replace(Regex("[\\r\\n\\t]"), "_")
+    input.replace(Regex("[\\p{Cntrl}]"), "_")
 
 @Component
 class UserLoggingFilter(
