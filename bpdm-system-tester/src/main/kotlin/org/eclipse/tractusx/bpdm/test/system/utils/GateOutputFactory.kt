@@ -41,7 +41,7 @@ class GateOutputFactory(
         checkedByExternalDataSource = false,
         lastConfidenceCheckAt = LocalDateTime.now(),
         nextConfidenceCheckAt = LocalDateTime.now().plus (5, ChronoUnit.DAYS),
-        confidenceLevel = 0
+        confidenceLevel = 5
     )
 
     fun createOutput(fromSeed: String, externalId: String = fromSeed): BusinessPartnerOutputDto{
@@ -99,4 +99,10 @@ fun BusinessPartnerOutputDto.withSharedByOwner(sharedByOwner: Boolean) = copy(
     legalEntity = legalEntity.copy(confidenceCriteria = legalEntity.confidenceCriteria.copy(sharedByOwner = sharedByOwner)),
     site = site?.copy(confidenceCriteria = site!!.confidenceCriteria.copy(sharedByOwner = sharedByOwner)),
     address = address.copy(confidenceCriteria = address.confidenceCriteria.copy(sharedByOwner = sharedByOwner))
+)
+
+fun BusinessPartnerOutputDto.withNumberOfSharingMembers(legalEntityNumber: Int, siteNumber: Int, addressNumber: Int) = copy(
+    legalEntity = legalEntity.copy(confidenceCriteria = legalEntity.confidenceCriteria.copy(numberOfSharingMembers = legalEntityNumber)),
+    site = site?.copy(confidenceCriteria = site!!.confidenceCriteria.copy(numberOfSharingMembers = siteNumber)),
+    address = address.copy(confidenceCriteria = address.confidenceCriteria.copy(numberOfSharingMembers = addressNumber))
 )

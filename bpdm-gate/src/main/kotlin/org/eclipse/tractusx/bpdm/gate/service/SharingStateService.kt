@@ -155,7 +155,7 @@ class SharingStateService(
         return stateRepository.save(sharingState)
     }
 
-    private fun setReady(
+    fun setReady(
         sharingState: SharingStateDb
     ): SharingStateDb {
         sharingState.sharingStateType = SharingStateType.Ready
@@ -182,27 +182,11 @@ class SharingStateService(
                         sharingErrorCode = null,
                         sharingErrorMessage = null,
                         sharingProcessStarted = null,
-                        tenantBpnl = ownerBpnl
+                        tenantBpnl = ownerBpnl,
+                        isGoldenRecordCounted = null,
+                        syncedIsGoldenRecordCounted = null
                     )
                 )
         }
     }
-
-    data class PendingRequest(
-        val externalId: String,
-        val taskId: String,
-        val startTimeOverwrite: LocalDateTime? = null
-    )
-
-    data class SuccessRequest(
-        val externalId: String,
-        val startTimeOverwrite: LocalDateTime? = null
-    )
-
-    data class ErrorRequest(
-        val externalId: String,
-        val errorCode: BusinessPartnerSharingError,
-        val errorMessage: String?,
-        val startTimeOverwrite: LocalDateTime? = null
-    )
 }

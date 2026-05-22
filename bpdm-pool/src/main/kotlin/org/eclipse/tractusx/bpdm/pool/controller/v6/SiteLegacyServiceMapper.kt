@@ -39,12 +39,12 @@ import org.eclipse.tractusx.bpdm.pool.api.v6.model.response.SitePartnerCreateRes
 import org.eclipse.tractusx.bpdm.pool.api.v6.model.response.SitePartnerCreateVerboseDto
 import org.eclipse.tractusx.bpdm.pool.api.v6.model.response.SitePartnerUpdateResponseWrapper
 import org.eclipse.tractusx.bpdm.pool.api.v6.model.response.SiteWithMainAddressVerboseDto
-import org.eclipse.tractusx.bpdm.pool.dto.AddressMetadataDto
+import org.eclipse.tractusx.bpdm.pool.controller.v6.LegalEntityLegacyServiceMapper.Companion.IDENTIFIER_AMOUNT_LIMIT
+import org.eclipse.tractusx.bpdm.pool.dto.AddressInvariantMetadataDto
 import org.eclipse.tractusx.bpdm.pool.dto.ChangelogEntryCreateRequest
 import org.eclipse.tractusx.bpdm.pool.entity.LegalEntityDb
 import org.eclipse.tractusx.bpdm.pool.entity.LogisticAddressDb
 import org.eclipse.tractusx.bpdm.pool.entity.SiteDb
-import org.eclipse.tractusx.bpdm.pool.exception.BpdmValidationException
 import org.eclipse.tractusx.bpdm.pool.repository.AddressIdentifierRepository
 import org.eclipse.tractusx.bpdm.pool.repository.LegalEntityRepository
 import org.eclipse.tractusx.bpdm.pool.repository.SiteRepository
@@ -254,7 +254,8 @@ class SiteLegacyServiceMapper(
             val validationErrors =
                 regionValidator.validate(legalAddressDto, request) +
                         identifiersValidator.validate(legalAddressDto, request) +
-                        identifiersDuplicateValidator.validate(legalAddressDto, request, bridge.bpnA)
+                        identifiersDuplicateValidator.validate(legalAddressDto, request, bridge.bpnA) +
+                        validateAddressIdentifierTooMany(legalAddressDto, request, messages.identifiersTooMany)
 
             if (validationErrors.isNotEmpty()) {
                 val existing = result[request]
@@ -353,10 +354,11 @@ class SiteLegacyServiceMapper(
         val value: String
     )
 
-    private fun AddressMetadataDto.toMapping() =
+    private fun AddressInvariantMetadataDto.toMapping() =
         AddressMetadataMapping(
             idTypes = idTypes.associateBy { it.technicalKey },
-            regions = regions.associateBy { it.regionCode }
+            regions = regions.associateBy { it.regionCode },
+            scriptCodes = emptyMap()
         )
 
     private fun createLogisticAddress(
@@ -508,7 +510,7 @@ class SiteLegacyServiceMapper(
         }.filterValues { it.isNotEmpty() }
     }
 
-    inner class ValidateUpdateBpnExists<ERROR : ErrorCode>(
+    class ValidateUpdateBpnExists<ERROR : ErrorCode>(
         private val existingBpns: Set<String>,
         private val errorCode: ERROR
     ) {
@@ -538,14 +540,26 @@ class SiteLegacyServiceMapper(
         val bpnSs = bpnIssuingService.issueSiteBpns(requests.size)
 
         val createdSites = requests.zip(bpnSs).map { (siteRequest, bpnS) ->
-            val legalEntityParent =
-                legalEntitiesByBpn[siteRequest.bpnLParent] ?: throw BpdmValidationException("Parent ${siteRequest.bpnLParent} not found for site to create")
+            if (legalEntitiesByBpn[siteRequest.bpnLParent] == null) {
+                return SitePartnerCreateResponseWrapper(emptyList(), listOf(
+                    ErrorInfo(
+                        SiteCreateError.LegalEntityNotFound,
+                        "Parent ${siteRequest.bpnLParent} not found for site to create",
+                        siteRequest.bpnLParent
+                    )
+                ))
+            } else if (legalEntitiesByBpn[siteRequest.bpnLParent]!!.legalAddress.site != null) {
+                return SitePartnerCreateResponseWrapper(emptyList(), listOf(
+                    ErrorInfo(
+                        SiteCreateError.MainAddressDuplicateIdentifier,
+                        "Can't create site for legal entity ${siteRequest.bpnLParent} with legal address as site main address: Legal address already belongs to site ${legalEntitiesByBpn[siteRequest.bpnLParent]!!.legalAddress.site!!.bpn}",
+                        siteRequest.name
+                    )
+                ))
+            }
 
-            if(legalEntityParent.legalAddress.site != null)
-                throw BpdmValidationException("Can't create site for legal entity ${siteRequest.bpnLParent} with legal address as site main address: Legal address already belongs to site ${legalEntityParent.legalAddress.site!!.bpn}")
-
-            createSite(siteRequest, bpnS, legalEntityParent)
-                .apply { mainAddress = legalEntityParent.legalAddress }
+            createSite(siteRequest, bpnS, legalEntitiesByBpn[siteRequest.bpnLParent]!!)
+                .apply { mainAddress = legalEntitiesByBpn[siteRequest.bpnLParent]!!.legalAddress }
                 .apply { mainAddress.site = this }
         }
 
@@ -559,6 +573,15 @@ class SiteLegacyServiceMapper(
 
         return SitePartnerCreateResponseWrapper(siteResponse, emptyList())
 
+    }
+
+    private fun <ERROR: ErrorCode> validateAddressIdentifierTooMany(address: IBaseLogisticAddressDto, entityKey: RequestWithKey, errorCode: ERROR): Collection<ErrorInfo<ERROR>>{
+        return validatedIdentifiersTooMany(address.identifiers.size, entityKey, errorCode)
+    }
+
+    private fun  <ERROR: ErrorCode> validatedIdentifiersTooMany(identifierAmount: Int, entityKey: RequestWithKey, errorCode: ERROR): Collection<ErrorInfo<ERROR>>{
+        return if(identifierAmount > IDENTIFIER_AMOUNT_LIMIT) listOf(ErrorInfo(errorCode, "Amount of identifiers ($identifierAmount) exceeds limit of $IDENTIFIER_AMOUNT_LIMIT", entityKey.getRequestKey()))
+        else emptyList()
     }
 
 }

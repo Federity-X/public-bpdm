@@ -25,7 +25,6 @@ import org.eclipse.tractusx.bpdm.common.dto.IBaseStateDto
 import org.eclipse.tractusx.bpdm.common.dto.PaginationRequest
 import org.eclipse.tractusx.bpdm.common.exception.BpdmNullMappingException
 import org.eclipse.tractusx.bpdm.common.model.StageType
-import org.eclipse.tractusx.bpdm.gate.api.model.SharableRelationType
 import org.eclipse.tractusx.bpdm.gate.api.model.SharingStateType
 import org.eclipse.tractusx.bpdm.gate.config.GoldenRecordTaskConfigProperties
 import org.eclipse.tractusx.bpdm.gate.entity.*
@@ -39,11 +38,14 @@ import org.eclipse.tractusx.bpdm.pool.api.model.request.AddressSearchRequest
 import org.eclipse.tractusx.bpdm.pool.api.model.request.ChangelogSearchRequest
 import org.eclipse.tractusx.bpdm.pool.api.model.request.LegalEntitySearchRequest
 import org.eclipse.tractusx.bpdm.pool.api.model.request.SiteSearchRequest
+import org.eclipse.tractusx.bpdm.pool.api.model.response.LegalEntityWithLegalAddressVerboseDto
+import org.eclipse.tractusx.orchestrator.api.model.AddressGoldenRecordRelation
+import org.eclipse.tractusx.orchestrator.api.model.AddressGoldenRecordRelationType
+import org.eclipse.tractusx.orchestrator.api.model.LegalEntityGoldenRecordRelation
+import org.eclipse.tractusx.orchestrator.api.model.LegalEntityGoldenRecordRelationType
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
-import java.time.OffsetDateTime
-import java.time.ZoneOffset
 import kotlin.reflect.KProperty
 
 @Service
@@ -77,19 +79,17 @@ class GoldenRecordUpdateChunkService(
     private val taskConfigProperties: GoldenRecordTaskConfigProperties,
     private val businessPartnerRepository: BusinessPartnerRepository,
     private val copyUtil: BusinessPartnerCopyUtil,
-    private val businessPartnerService: BusinessPartnerService
+    private val businessPartnerService: BusinessPartnerService,
+    private val businessPartnerMappings: BusinessPartnerMappings
 ) {
 
     private val logger = KotlinLogging.logger { }
-
-    private val placeholderTime = OffsetDateTime.of(2025, 1, 1, 1, 1, 1, 1, ZoneOffset.UTC).toInstant()
-
 
     @Transactional
     fun updateFromNextChunk(): UpdateStats{
         logger.info { "Update next chunk of Business Partner Output based on Golden Record Updates from the Pool..." }
 
-        val syncRecord = syncRecordService.setSynchronizationStart(SyncTypeDb.POOL_TO_GATE_OUTPUT)
+        val syncRecord = syncRecordService.getOrCreateRecord(SyncTypeDb.POOL_TO_GATE_OUTPUT)
 
         val changelogSearchRequest = ChangelogSearchRequest(timestampAfter = syncRecord.fromTime)
         val pageRequest = PaginationRequest(0, taskConfigProperties.creation.fromPool.batchSize)
@@ -106,7 +106,7 @@ class GoldenRecordUpdateChunkService(
         val updatedSites = updateSites(changedBpnSs).size
         val updatedAddresses = updateAddresses(changedBpnAs).size
 
-        syncRecordService.setSynchronizationSuccess(SyncTypeDb.POOL_TO_GATE_OUTPUT)
+        syncRecordService.updateRecord(syncRecord, poolChangelogEntries.content.lastOrNull()?.timestamp)
 
         logger.debug { "Updated '$updatedLegalEntities' legal entities, '$updatedSites' sites and '$updatedAddresses' addresses." }
 
@@ -130,11 +130,11 @@ class GoldenRecordUpdateChunkService(
 
         val searchRequest = LegalEntitySearchRequest(bpnLs = bpnLsToQuery.toList())
         val legalEntities = if(searchRequest.bpnLs.isNotEmpty())
-            poolClient.legalEntities.getLegalEntities(searchRequest, PaginationRequest(size = searchRequest.bpnLs.size)).content.map { it.legalEntity }
+            poolClient.legalEntities.getLegalEntities(searchRequest, PaginationRequest(size = searchRequest.bpnLs.size)).content
         else
             emptyList()
 
-        val legalEntitiesByBpn = legalEntities.associateBy { it.bpnl }
+        val legalEntitiesByBpn = legalEntities.associateBy { it.header.bpnl }
 
         return businessPartnersToUpdate.mapNotNull { output ->
             val legalEntity = legalEntitiesByBpn[output.bpnL!!] ?: return@mapNotNull null
@@ -186,7 +186,7 @@ class GoldenRecordUpdateChunkService(
         else
             emptyList()
 
-        val addressesByBpn = addresses.associateBy { it.bpna }
+        val addressesByBpn = addresses.associateBy { it.address.bpna }
 
         return businessPartnersToUpdate.mapNotNull { output ->
             val address = addressesByBpn[output.bpnA!!] ?: return@mapNotNull null
@@ -195,7 +195,7 @@ class GoldenRecordUpdateChunkService(
         }
     }
 
-    private fun LegalEntityVerboseDto.toUpsertData(existingOutput: BusinessPartnerDb): OutputUpsertData {
+    private fun LegalEntityWithLegalAddressVerboseDto.toUpsertData(existingOutput: BusinessPartnerDb): OutputUpsertData {
         val copy = BusinessPartnerDb.createEmpty(existingOutput.sharingState, existingOutput.stage)
         copyUtil.copyValues(existingOutput, copy)
         update(copy, this)
@@ -240,7 +240,10 @@ class GoldenRecordUpdateChunkService(
             alternativePostalAddress = postalAddress.alternativePostalAddress?.toUpsertData(),
             legalEntityConfidence = legalEntityConfidence?.toUpsertData() ?: throw createMappingException(BusinessPartnerDb::legalEntityConfidence, id),
             siteConfidence = siteConfidence?.toUpsertData(),
-            addressConfidence = addressConfidence?.toUpsertData() ?: throw createMappingException(BusinessPartnerDb::addressConfidence, id)
+            addressConfidence = addressConfidence?.toUpsertData() ?: throw createMappingException(BusinessPartnerDb::addressConfidence, id),
+            scriptVariants = scriptVariants.map { businessPartnerMappings.toScriptVariantDto(it) },
+            legalEntityGoldenRecordRelations = legalEntityGoldenRecordRelations.map { it.toUpsertData() },
+            addressGoldenRecordRelations = addressGoldenRecordRelations.map { it.toUpsertData() },
         )
     }
 
@@ -250,10 +253,6 @@ class GoldenRecordUpdateChunkService(
 
     private fun StateDb.toUpsertData(): State {
         return State(validFrom = validFrom, validTo = validTo, type = type, businessPartnerType = businessPartnerTyp)
-    }
-
-    private fun RelationOutputDb.toUpsertData(): Relation {
-        return Relation(relationType, sourceBpnL, targetBpnL)
     }
 
     private fun PhysicalPostalAddressDb.toUpsertData(): PhysicalPostalAddress {
@@ -318,35 +317,73 @@ class GoldenRecordUpdateChunkService(
         return GeoCoordinate(longitude, latitude, altitude)
     }
 
-    private fun update(businessPartner: BusinessPartnerDb, legalEntity: LegalEntityVerboseDto){
-        updateIdentifiers(businessPartner.identifiers, legalEntity.identifiers.map(::toEntity), BusinessPartnerType.LEGAL_ENTITY)
-        updateStates(businessPartner.states, legalEntity.states, BusinessPartnerType.LEGAL_ENTITY)
-        businessPartner.legalName = legalEntity.legalName
-        businessPartner.legalForm = legalEntity.legalForm
-        businessPartner.shortName = legalEntity.legalShortName
-        businessPartner.legalEntityConfidence?.let { update(it,  legalEntity.confidenceCriteria) }
+    private fun LegalEntityGoldenRecordRelationDb.toUpsertData(): LegalEntityGoldenRecordRelation {
+        return LegalEntityGoldenRecordRelation(relationType, sourceBpn, targetBpn)
+    }
+
+    private fun AddressGoldenRecordRelationDb.toUpsertData(): AddressGoldenRecordRelation {
+        return AddressGoldenRecordRelation(relationType, sourceBpn, targetBpn)
+    }
+
+    private fun update(businessPartner: BusinessPartnerDb, legalEntity: LegalEntityWithLegalAddressVerboseDto){
+        val header = legalEntity.header
+        updateIdentifiers(businessPartner.identifiers, header.identifiers.map(::toEntity), BusinessPartnerType.LEGAL_ENTITY)
+        updateStates(businessPartner.states, header.states, BusinessPartnerType.LEGAL_ENTITY)
+        businessPartner.legalName = header.legalName
+        businessPartner.legalForm = header.legalForm
+        businessPartner.shortName = header.legalShortName
+        businessPartner.legalEntityConfidence?.let { update(it,  header.confidenceCriteria) }
+        businessPartner.legalEntityGoldenRecordRelations.addAll(legalEntity.header.relations.map(::toEntity))
+
+        val variantByCode = businessPartner.scriptVariants.associateBy { it.scriptCode }
+
+        legalEntity.scriptVariants.groupBy { it.scriptCode }.map { it.value.first() }.forEach { goldenRecordVariant ->
+            val variant = variantByCode[goldenRecordVariant.scriptCode]
+                ?: BusinessPartnerScriptVariantDb(goldenRecordVariant.scriptCode, businessPartner).apply {   businessPartner.scriptVariants.add(this) }
+
+            variant.legalName = goldenRecordVariant.legalName
+            variant.shortName = goldenRecordVariant.shortName
+        }
     }
 
     private fun update(businessPartner: BusinessPartnerDb, site: SiteVerboseDto){
         updateStates(businessPartner.states, site.states, BusinessPartnerType.SITE)
         businessPartner.siteName = site.name
         businessPartner.siteConfidence?.let { update(it,  site.confidenceCriteria) }
+
+        val goldenRecordVariantByCode = site.scriptVariants.associateBy { it.scriptCode }
+        businessPartner.scriptVariants.forEach { variant ->
+            val goldenRecordVariant = goldenRecordVariantByCode[variant.scriptCode] ?: return@forEach
+            variant.siteName = goldenRecordVariant.name
+        }
     }
 
     private fun update(businessPartner: BusinessPartnerDb, address: LogisticAddressVerboseDto) : OutputUpsertData{
-        updateIdentifiers(businessPartner.identifiers, address.identifiers.map(::toEntity), BusinessPartnerType.ADDRESS)
-        updateStates(businessPartner.states, address.states, BusinessPartnerType.ADDRESS)
-        businessPartner.addressName = address.name
-        businessPartner.postalAddress.physicalPostalAddress = address.physicalPostalAddress.toEntity()
-        businessPartner.postalAddress.alternativePostalAddress = address.alternativePostalAddress?.toEntity()
-        businessPartner.addressConfidence?.let { update(it,  address.confidenceCriteria) }
+        val addressProperties = address.address
+
+        updateIdentifiers(businessPartner.identifiers, addressProperties.identifiers.map(::toEntity), BusinessPartnerType.ADDRESS)
+        updateStates(businessPartner.states, addressProperties.states, BusinessPartnerType.ADDRESS)
+        businessPartner.addressName = addressProperties.name
+        businessPartner.postalAddress.addressType = addressProperties.addressType
+        businessPartner.postalAddress.physicalPostalAddress = addressProperties.physicalPostalAddress.toEntity()
+        businessPartner.postalAddress.alternativePostalAddress = addressProperties.alternativePostalAddress?.toEntity()
+        businessPartner.addressConfidence?.let { update(it,  addressProperties.confidenceCriteria) }
+        businessPartner.addressGoldenRecordRelations.addAll(addressProperties.relations.map(::toEntity))
+
+        val goldenRecordVariantByCode = address.scriptVariants.associateBy { it.scriptCode }
+        businessPartner.scriptVariants.forEach { variant ->
+            val goldenRecordVariant = goldenRecordVariantByCode[variant.scriptCode] ?: return@forEach
+            variant.addressName = goldenRecordVariant.address.addressName
+            variant.physicalAddress = goldenRecordVariant.address.physicalAddress.toEntity()
+            variant.alternativeAddress = goldenRecordVariant.address.alternativeAddress?.toEntity()
+        }
 
         //Below code will be used when,
         //When addressType has been changed from LegalAddress to LegalAndSiteMainAddress
         //When addressType has been changed from AdditionalAddress to SiteMainAddress
-        if (address.bpnSite != null && businessPartner.bpnS == null) {
-            businessPartner.bpnS = address.bpnSite
-            val searchRequest = SiteSearchRequest(siteBpns = listOf(address.bpnSite!!))
+        if (addressProperties.bpnSite != null && businessPartner.bpnS == null) {
+            businessPartner.bpnS = addressProperties.bpnSite
+            val searchRequest = SiteSearchRequest(siteBpns = listOf(addressProperties.bpnSite!!))
             val sites = if(searchRequest.siteBpns.isNotEmpty())
                 poolClient.sites.getSites(searchRequest, PaginationRequest(size = searchRequest.siteBpns.size)).content.map { it.site }
             else
@@ -398,7 +435,28 @@ class GoldenRecordUpdateChunkService(
             businessPartnerType = BusinessPartnerType.ADDRESS
         )
 
-    private fun toEntity(poolDto: IBaseStateDto, businessPartnerType: BusinessPartnerType) =
+    private fun toEntity(poolDto: RelationVerboseDto) =
+        LegalEntityGoldenRecordRelationDb(
+            relationType = when (poolDto.type) {
+                LegalEntityRelationType.IsAlternativeHeadquarterFor -> LegalEntityGoldenRecordRelationType.IsAlternativeHeadquarterFor
+                LegalEntityRelationType.IsManagedBy -> LegalEntityGoldenRecordRelationType.IsManagedBy
+                LegalEntityRelationType.IsOwnedBy -> LegalEntityGoldenRecordRelationType.IsOwnedBy
+            },
+            sourceBpn = poolDto.businessPartnerSourceBpnl,
+            targetBpn = poolDto.businessPartnerTargetBpnl
+        )
+
+
+    private fun toEntity(poolDto: AddressRelationVerboseDto) =
+        AddressGoldenRecordRelationDb(
+            relationType = when(poolDto.type){
+                AddressRelationType.IsReplacedBy -> AddressGoldenRecordRelationType.IsReplacedBy
+            },
+            sourceBpn = poolDto.businessPartnerSourceBpna,
+            targetBpn = poolDto.businessPartnerTargetBpna
+        )
+
+    fun toEntity(poolDto: IBaseStateDto, businessPartnerType: BusinessPartnerType) =
         StateDb(
             validFrom = poolDto.validFrom,
             validTo = poolDto.validTo,
@@ -450,20 +508,28 @@ class GoldenRecordUpdateChunkService(
             deliveryServiceNumber = deliveryServiceNumber
         )
 
-    private fun toEntity(relation: RelationVerboseDto) =
-        RelationOutputDb(
-            relationType = relation.type.toGateModel(),
-            sourceBpnL = relation.businessPartnerSourceBpnl,
-            targetBpnL = relation.businessPartnerTargetBpnl,
-            updatedAt = placeholderTime
+    private fun PhysicalAddressScriptVariantDto.toEntity() =
+        PhysicalPostalAddressScriptVariantDb(
+            postalCode = postalCode,
+            city = city,
+            district = district,
+            street = street?.toEntity(),
+            companyPostalCode = companyPostalCode,
+            industrialZone = industrialZone,
+            building = building,
+            floor = floor,
+            door = door,
+            taxJurisdictionCode = taxJurisdictionCode
         )
 
-    private fun RelationType.toGateModel() =
-        when(this){
-            RelationType.IsAlternativeHeadquarterFor -> SharableRelationType.IsAlternativeHeadquarterFor
-            RelationType.IsManagedBy -> SharableRelationType.IsManagedBy
-            RelationType.IsOwnedBy -> SharableRelationType.IsOwnedBy
-        }
+    private fun AlternativeAddressScriptVariantDto.toEntity() =
+        AlternativePostalAddressScriptVariantDb(
+            postalCode = postalCode,
+            city = city,
+            deliveryServiceQualifier = deliveryServiceQualifier,
+            deliveryServiceNumber = deliveryServiceNumber
+        )
+
 
     private fun createMappingException(property: KProperty<*>, entityId: Long? = null): BpdmNullMappingException {
         return BpdmNullMappingException(BusinessPartnerDb::class, OutputUpsertData::class, property, entityId.toString())

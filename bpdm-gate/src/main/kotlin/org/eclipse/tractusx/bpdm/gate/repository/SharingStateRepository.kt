@@ -57,7 +57,7 @@ interface SharingStateRepository : PagingAndSortingRepository<SharingStateDb, Lo
             Specification<SharingStateDb> { root, _, builder ->
                 updatedAfter?.let {
                     builder.greaterThan(root
-                        .get<Instant>(SharingStateDb::updatedAt.name), updatedAfter)
+                        .get(SharingStateDb::updatedAt.name), updatedAfter)
                 }
             }
 
@@ -81,6 +81,9 @@ interface SharingStateRepository : PagingAndSortingRepository<SharingStateDb, Lo
     fun countSharingStateTypes(): List<SharingStateTypeCount>
 
     fun findByTaskIdIn(taskIds: Set<String>): Set<SharingStateDb>
+
+    @Query(value = "SELECT s FROM SharingStateDb AS s WHERE (s.isGoldenRecordCounted IS NULL AND s.syncedIsGoldenRecordCounted IS NOT NULL) OR (s.isGoldenRecordCounted IS NOT NULL AND s.syncedIsGoldenRecordCounted IS NULL) OR (s.isGoldenRecordCounted <> s.syncedIsGoldenRecordCounted)")
+    fun findByIsGoldenRecordCountedUnsynced(pageable: Pageable): Page<SharingStateDb>
 
     interface SharingStateTypeCount {
         val type: SharingStateType

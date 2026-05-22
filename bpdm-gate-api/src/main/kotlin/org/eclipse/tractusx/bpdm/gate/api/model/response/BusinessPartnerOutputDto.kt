@@ -41,6 +41,7 @@ data class BusinessPartnerOutputDto(
     override val site: SiteRepresentationOutputDto?,
     override val address: AddressComponentOutputDto,
     override val externalSequenceTimestamp: Instant? = null,
+    val scriptVariants: List<BusinessPartnerScriptVariantDto> = emptyList(),
 
     @get:Schema(description = CommonDescription.createdAt)
     val createdAt: Instant,
@@ -60,7 +61,8 @@ data class LegalEntityRepresentationOutputDto(
     override val shortName: String? = null,
     override val legalForm: String? = null,
     val confidenceCriteria: ConfidenceCriteriaDto,
-    override val states: Collection<BusinessPartnerStateDto> = emptyList()
+    override val states: Collection<BusinessPartnerStateDto> = emptyList(),
+    val goldenRecordRelations: List<LegalEntityGoldenRecordRelationDto> = emptyList()
 ) : IBaseLegalEntityRepresentation
 
 @Schema(
@@ -84,5 +86,7 @@ data class AddressComponentOutputDto(
     override val physicalPostalAddress: PhysicalPostalAddressDto = PhysicalPostalAddressDto(),
     override val alternativePostalAddress: AlternativePostalAddressDto? = null,
     val confidenceCriteria: ConfidenceCriteriaDto,
-    override val states: Collection<BusinessPartnerStateDto> = emptyList()
+    override val states: Collection<BusinessPartnerStateDto> = emptyList(),
+    val identifiers: Collection<AddressIdentifierDto> = emptyList(),
+    val goldenRecordRelations: List<AddressGoldenRecordRelationDto> = emptyList()
 ) : IBaseAddressRepresentation

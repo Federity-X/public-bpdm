@@ -1,6 +1,6 @@
 # bpdm-gate
 
-![Version: 7.2.0-SNAPSHOT](https://img.shields.io/badge/Version-7.2.0--SNAPSHOT-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 7.2.0-SNAPSHOT](https://img.shields.io/badge/AppVersion-7.2.0--SNAPSHOT-informational?style=flat-square)
+![Version: 8.0.0-rc1](https://img.shields.io/badge/Version-8.0.0--rc1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 7.4.0-rc1](https://img.shields.io/badge/AppVersion-7.4.0--rc1-informational?style=flat-square)
 
 A Helm chart for deploying the BPDM gate service
 
@@ -21,9 +21,7 @@ A Helm chart for deploying the BPDM gate service
 
 | Repository | Name | Version |
 |------------|------|---------|
-| file://../bpdm-common | bpdm-common | 1.0.5 |
-| https://charts.bitnami.com/bitnami | postgres(postgresql) | 12.12.10 |
-| https://eclipse-tractusx.github.io/charts/dev | centralidp(centralidp) | 4.2.1 |
+| file://../bpdm-common | bpdm-common | 2.0.0 |
 
 ## Values
 
@@ -73,7 +71,7 @@ A Helm chart for deploying the BPDM gate service
 | readinessProbe.successThreshold | int | `1` |  |
 | readinessProbe.timeoutSeconds | int | `1` |  |
 | replicaCount | int | `1` |  |
-| resources.limits.cpu | string | `"1000m"` |  |
+| resources.limits.cpu | int | `1` |  |
 | resources.limits.memory | string | `"1Gi"` |  |
 | resources.requests.cpu | string | `"100m"` |  |
 | resources.requests.memory | string | `"1Gi"` |  |

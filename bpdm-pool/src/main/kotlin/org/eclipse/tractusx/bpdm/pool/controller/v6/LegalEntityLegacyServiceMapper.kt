@@ -35,13 +35,10 @@ import org.eclipse.tractusx.bpdm.pool.api.model.response.LegalEntityUpdateError
 import org.eclipse.tractusx.bpdm.pool.api.v6.model.*
 import org.eclipse.tractusx.bpdm.pool.api.v6.model.request.LegalEntityPartnerCreateRequest
 import org.eclipse.tractusx.bpdm.pool.api.v6.model.request.LegalEntityPartnerUpdateRequest
-import org.eclipse.tractusx.bpdm.pool.api.v6.model.response.LegalEntityPartnerCreateResponseWrapper
-import org.eclipse.tractusx.bpdm.pool.api.v6.model.response.LegalEntityPartnerCreateVerboseDto
-import org.eclipse.tractusx.bpdm.pool.api.v6.model.response.LegalEntityPartnerUpdateResponseWrapper
-import org.eclipse.tractusx.bpdm.pool.api.v6.model.response.LegalEntityWithLegalAddressVerboseDto
-import org.eclipse.tractusx.bpdm.pool.dto.AddressMetadataDto
+import org.eclipse.tractusx.bpdm.pool.api.v6.model.response.*
+import org.eclipse.tractusx.bpdm.pool.dto.AddressInvariantMetadataDto
 import org.eclipse.tractusx.bpdm.pool.dto.ChangelogEntryCreateRequest
-import org.eclipse.tractusx.bpdm.pool.dto.LegalEntityMetadataDto
+import org.eclipse.tractusx.bpdm.pool.dto.LegalEntityInvariantHeaderMetadataDto
 import org.eclipse.tractusx.bpdm.pool.entity.*
 import org.eclipse.tractusx.bpdm.pool.repository.*
 import org.eclipse.tractusx.bpdm.pool.service.*
@@ -54,7 +51,7 @@ import org.eclipse.tractusx.bpdm.pool.service.BusinessPartnerBuildService.Compan
 import org.eclipse.tractusx.bpdm.pool.service.BusinessPartnerBuildService.Companion.toAddressState
 import org.eclipse.tractusx.bpdm.pool.service.BusinessPartnerBuildService.Companion.toLegalEntityIdentifier
 import org.eclipse.tractusx.bpdm.pool.service.BusinessPartnerBuildService.Companion.toLegalEntityState
-import org.eclipse.tractusx.bpdm.pool.service.BusinessPartnerBuildService.LegalEntityMetadataMapping
+import org.eclipse.tractusx.bpdm.pool.service.BusinessPartnerBuildService.LegalEntityHeaderMetadataMapping
 import org.eclipse.tractusx.bpdm.pool.service.RequestValidationService.*
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.jpa.domain.Specification
@@ -78,6 +75,10 @@ class LegalEntityLegacyServiceMapper(
     private val bpnIssuingService: BpnIssuingService,
     private val businessPartnerEquivalenceMapper: BusinessPartnerEquivalenceMapper
 ) {
+
+    companion object{
+        const val IDENTIFIER_AMOUNT_LIMIT = 100
+    }
 
     private val logger = KotlinLogging.logger { }
 
@@ -185,6 +186,10 @@ class LegalEntityLegacyServiceMapper(
             administrativeAreaLevel1 = administrativeArea?.regionCode,
             isActive = isActive
         )
+    }
+
+    private fun RelationDb.toDto(): RelationVerboseDto {
+        return RelationVerboseDto(type, startNode.bpn, endNode.bpn)
     }
 
     data class LegalEntitySearchRequest(
@@ -310,7 +315,8 @@ class LegalEntityLegacyServiceMapper(
             val validationErrors =
                 legalFormValidator.validate(legalEntityDto, request) +
                         identifierValidator.validate(legalEntityDto, request) +
-                        duplicatesValidator.validate(legalEntityDto, request, bpn = null)
+                        duplicatesValidator.validate(legalEntityDto, request, bpn = null) +
+                        validateLegalEntityIdentifierTooMany(legalEntityDto, request, LegalEntityCreateError.LegalEntityIdentifiersTooMany)
             request to validationErrors
         }.filterValues { it.isNotEmpty() }
     }
@@ -409,7 +415,8 @@ class LegalEntityLegacyServiceMapper(
             val validationErrors =
                 regionValidator.validate(legalAddressDto, request) +
                         identifiersValidator.validate(legalAddressDto, request) +
-                        identifiersDuplicateValidator.validate(legalAddressDto, request, bridge.bpnA)
+                        identifiersDuplicateValidator.validate(legalAddressDto, request, bridge.bpnA) +
+                        validateAddressIdentifierTooMany(legalAddressDto, request, messages.identifiersTooMany)
 
             if (validationErrors.isNotEmpty()) {
                 val existing = result[request]
@@ -521,7 +528,7 @@ class LegalEntityLegacyServiceMapper(
     fun createLegalEntity(
         legalEntityDto: LegalEntityDto,
         bpnL: String,
-        metadataMap: LegalEntityMetadataMapping
+        metadataMap: LegalEntityHeaderMetadataMapping
     ): LegalEntityDb {
         // it has to be validated that the legalForm exits
         val legalForm = legalEntityDto.legalForm?.let { metadataMap.legalForms[it]!! }
@@ -542,7 +549,7 @@ class LegalEntityLegacyServiceMapper(
     fun updateLegalEntity(
         legalEntity: LegalEntityDb,
         legalEntityDto: LegalEntityDto,
-        metadataMap: LegalEntityMetadataMapping
+        metadataMap: LegalEntityHeaderMetadataMapping
     ) {
         legalEntity.currentness = createCurrentnessTimestamp()
 
@@ -556,16 +563,18 @@ class LegalEntityLegacyServiceMapper(
         legalEntity.isCatenaXMemberData = legalEntityDto.isCatenaXMemberData
     }
 
-    private fun LegalEntityMetadataDto.toMapping() =
-        LegalEntityMetadataMapping(
+    private fun LegalEntityInvariantHeaderMetadataDto.toMapping() =
+        LegalEntityHeaderMetadataMapping(
             idTypes = idTypes.associateBy { it.technicalKey },
-            legalForms = legalForms.associateBy { it.technicalKey }
+            legalForms = legalForms.associateBy { it.technicalKey },
+            scriptCodes = emptyMap()
         )
 
-    private fun AddressMetadataDto.toMapping() =
+    private fun AddressInvariantMetadataDto.toMapping() =
         AddressMetadataMapping(
             idTypes = idTypes.associateBy { it.technicalKey },
-            regions = regions.associateBy { it.regionCode }
+            regions = regions.associateBy { it.regionCode },
+            scriptCodes = emptyMap()
         )
 
     private fun createLogisticAddress(
@@ -617,7 +626,7 @@ class LegalEntityLegacyServiceMapper(
         address.confidenceCriteria = createConfidenceCriteria(dto.confidenceCriteria)
     }
 
-    private fun LegalEntityMetadataDto.toKeys(): LegalEntityMetadataKeys {
+    private fun LegalEntityInvariantHeaderMetadataDto.toKeys(): LegalEntityMetadataKeys {
         return LegalEntityMetadataKeys(
             idTypes = idTypes.map { it.technicalKey }.toSet(),
             legalForms = legalForms.map { it.technicalKey }.toSet()
@@ -720,12 +729,13 @@ class LegalEntityLegacyServiceMapper(
                 legalFormValidator.validate(legalEntity, requestBridge.request) +
                         identifierValidator.validate(legalEntity, requestBridge.request) +
                         duplicatesValidator.validate(legalEntity, requestBridge.request, requestBridge.bpnL) +
-                        existingBpnValidator.validate(requestBridge.bpnL)
+                        existingBpnValidator.validate(requestBridge.bpnL) +
+                        validateLegalEntityIdentifierTooMany(legalEntity, requestBridge.request, LegalEntityUpdateError.LegalEntityIdentifiersTooMany)
             requestBridge.request to validationErrors
         }.filterValues { it.isNotEmpty() }
     }
 
-    inner class ValidateUpdateBpnExists<ERROR : ErrorCode>(
+    class ValidateUpdateBpnExists<ERROR : ErrorCode>(
         private val existingBpns: Set<String>,
         private val errorCode: ERROR
     ) {
@@ -744,5 +754,20 @@ class LegalEntityLegacyServiceMapper(
         duplicateIdentifier = LegalEntityUpdateError.LegalAddressDuplicateIdentifier,
         identifiersTooMany = LegalEntityUpdateError.LegalAddressIdentifiersTooMany
     )
+
+    private fun <ERROR: ErrorCode> validateLegalEntityIdentifierTooMany(legalEntity: IBaseLegalEntityDto, entityKey: RequestWithKey, errorCode: ERROR): Collection<ErrorInfo<ERROR>>{
+        return  validatedIdentifiersTooMany(legalEntity.identifiers.size, entityKey, errorCode)
+    }
+
+    private fun <ERROR: ErrorCode> validateAddressIdentifierTooMany(address: IBaseLogisticAddressDto, entityKey: RequestWithKey, errorCode: ERROR): Collection<ErrorInfo<ERROR>>{
+        return validatedIdentifiersTooMany(address.identifiers.size, entityKey, errorCode)
+    }
+
+    private fun  <ERROR: ErrorCode> validatedIdentifiersTooMany(identifierAmount: Int, entityKey: RequestWithKey, errorCode: ERROR): Collection<ErrorInfo<ERROR>>{
+        return if(identifierAmount > IDENTIFIER_AMOUNT_LIMIT) listOf(ErrorInfo(errorCode, "Amount of identifiers ($identifierAmount) exceeds limit of $IDENTIFIER_AMOUNT_LIMIT", entityKey.getRequestKey()))
+        else emptyList()
+    }
+
+
 
 }

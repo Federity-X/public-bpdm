@@ -19,7 +19,7 @@
 
 bpdm:
   bpn:
-    owner-bpn-l: BPNL00000003CRHK
+    owner-bpn-l: "BPNL000000000001"
   tasks:
     creation:
       fromSharingMember:
@@ -33,6 +33,8 @@ bpdm:
     relationCreation:
       cron: '-'
     relationCheck:
+      cron: '-'
+    recordSync:
       cron: '-'
 spring:
   datasource:

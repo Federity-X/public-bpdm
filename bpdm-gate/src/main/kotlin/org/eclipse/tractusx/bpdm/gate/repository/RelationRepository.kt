@@ -59,7 +59,7 @@ interface RelationRepository: JpaRepository<RelationDb, Long>, JpaSpecificationE
                 updatedAfter?.let {
                     builder.greaterThan(root
                         .get<RelationSharingStateDb>(RelationDb::sharingState.name)
-                        .get<Instant>(RelationSharingStateDb::updatedAt.name), updatedAfter)
+                        .get(RelationSharingStateDb::updatedAt.name), updatedAfter)
                 }
             }
 
@@ -90,44 +90,44 @@ interface RelationRepository: JpaRepository<RelationDb, Long>, JpaSpecificationE
 
                     builder.equal(relationTypePath, relationType)
                 }
-            }
+            } ?: Specification.unrestricted()
 
         fun byOutputSourceBpnLs(sourceBpnLs: List<String>) =
             sourceBpnLs.takeIf { it.isNotEmpty() }?.let {
                 Specification<RelationDb> { root, _, builder ->
                     root
                         .get<RelationOutputDb>(RelationDb::output.name)
-                        .get<RelationType>(RelationOutputDb::sourceBpnL.name)
+                        .get<RelationType>(RelationOutputDb::sourceBpn.name)
                         .`in`(sourceBpnLs)
                 }
-            }
+            } ?: Specification.unrestricted()
 
         fun byOutputTargetBpnLs(targetBpnLs: List<String>) =
             targetBpnLs.takeIf { it.isNotEmpty() }?.let {
                 Specification<RelationDb> { root, _, builder ->
                    root
                         .get<RelationOutputDb>(RelationDb::output.name)
-                        .get<RelationType>(RelationOutputDb::targetBpnL.name)
+                        .get<RelationType>(RelationOutputDb::targetBpn.name)
                        .`in`(targetBpnLs)
                 }
-            }
+            } ?: Specification.unrestricted()
 
         fun byOutputUpdatedAfter(updatedAfter: Instant?) =
             updatedAfter?.let {
                 Specification<RelationDb> { root, _, builder ->
                     val updatedAtPath = root
                         .get<RelationOutputDb>(RelationDb::output.name)
-                        .get<Instant>(RelationOutputDb::updatedAt.name)
+                        .get<Instant>(RelationOutputDb::resultUpdatedAt.name)
 
                     builder.greaterThan(updatedAtPath, updatedAfter)
                 }
-            }
+            } ?: Specification.unrestricted()
 
         fun byOutputIsNotNull() =
             Specification<RelationDb> { root, _, builder ->
                root
                     .get<RelationOutputDb>(RelationDb::output.name)
-                    .get<Instant>(RelationOutputDb::updatedAt.name)
+                    .get<Instant>(RelationOutputDb::resultUpdatedAt.name)
                     .isNotNull
             }
 

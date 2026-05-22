@@ -23,12 +23,13 @@ import io.mockk.every
 import io.mockk.mockk
 import org.eclipse.tractusx.bpdm.gate.util.OrchestratorHealthIndicator
 import org.eclipse.tractusx.bpdm.gate.util.PoolHealthIndicator
-import org.springframework.boot.actuate.health.Health
+import org.springframework.boot.health.contributor.Health
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
 @Configuration
-class MockHealthIndicatorConfig {
+class
+MockHealthIndicatorConfig {
 
     @Bean
     fun poolHealthIndicator(): PoolHealthIndicator {

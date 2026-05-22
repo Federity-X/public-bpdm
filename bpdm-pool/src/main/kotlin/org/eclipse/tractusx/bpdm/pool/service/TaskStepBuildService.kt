@@ -26,6 +26,7 @@ import org.eclipse.tractusx.bpdm.common.dto.GeoCoordinateDto
 import org.eclipse.tractusx.bpdm.common.dto.PaginationRequest
 import org.eclipse.tractusx.bpdm.pool.api.model.*
 import org.eclipse.tractusx.bpdm.pool.api.model.request.*
+import org.eclipse.tractusx.bpdm.pool.entity.LegalEntityDb
 import org.eclipse.tractusx.bpdm.pool.entity.LogisticAddressDb
 import org.eclipse.tractusx.bpdm.pool.exception.BpdmMultiValidationException
 import org.eclipse.tractusx.bpdm.pool.exception.BpdmValidationException
@@ -38,7 +39,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import org.eclipse.tractusx.bpdm.pool.api.model.AlternativePostalAddressDto as AlternativePostalAddressPoolDto
 import org.eclipse.tractusx.bpdm.pool.api.model.ConfidenceCriteriaDto as ConfidenceCriteriaPoolDto
-import org.eclipse.tractusx.bpdm.pool.api.model.LegalEntityDto as LegalEntityPoolDto
+import org.eclipse.tractusx.bpdm.pool.api.model.LegalEntityHeaderDto as LegalEntityPoolHeaderDto
 import org.eclipse.tractusx.bpdm.pool.api.model.LogisticAddressDto as LogisticAddressPoolDto
 import org.eclipse.tractusx.bpdm.pool.api.model.PhysicalPostalAddressDto as PhysicalPostalAddressPoolDto
 import org.eclipse.tractusx.bpdm.pool.api.model.SiteDto as SitePoolDto
@@ -53,22 +54,17 @@ class TaskStepBuildService(
     private val bpnRequestIdentifierRepository: BpnRequestIdentifierRepository,
     private val taskResolutionMapper: TaskResolutionMapper,
     private val logisticAddressRepository: LogisticAddressRepository,
-    private val siteRepository: SiteRepository
+    private val siteRepository: SiteRepository,
+    private val sharingMemberConfidenceService: SharingMemberConfidenceService
 ) {
 
     enum class CleaningError(val message: String) {
         LEGAL_NAME_IS_NULL("Legal name is null"),
         COUNTRY_CITY_IS_NULL("Country or city in physicalAddress is null"),
-        LEGAL_ENTITY_IS_NULL("Legal entity or BpnL Reference is null"),
-        LEGAL_ADDRESS_IS_NULL("Legal Address is null"),
-        PHYSICAL_ADDRESS_IS_NULL("Physical Address is null"),
         ALTERNATIVE_ADDRESS_DATA_IS_NULL("Country or city or deliveryServiceType or deliveryServiceNumber in alternativeAddress is null"),
         MAINE_ADDRESS_IS_NULL("Main address is null"),
-        BPNS_IS_NULL("BpnS Reference is null"),
         BPNA_IS_NULL("BpnA Reference is null"),
         SITE_NAME_IS_NULL("Site name is null"),
-        INVALID_LEGAL_ENTITY_BPN("Invalid legal entity BPN"),
-        CLASSIFICATION_TYPE_IS_NULL("Classification type is null"),
         PHYSICAL_ADDRESS_COUNTRY_MISSING("Physical Address has no country"),
         PHYSICAL_ADDRESS_CITY_MISSING("Physical Address has no city"),
         ALTERNATIVE_ADDRESS_COUNTRY_MISSING("Alternative Address has no country"),
@@ -79,8 +75,6 @@ class TaskStepBuildService(
         SITE_CONFIDENCE_CRITERIA_MISSING("Site is missing confidence criteria"),
         SITE_NAME_MISSING("Site has no name"),
         LEGAL_ENTITY_CONFIDENCE_CRITERIA_MISSING("Legal Entity has no confidence criteria"),
-        MAIN_ADDRESS_BPN_REFERENCE_MISSING("The BpnA Reference of the site main address is missing"),
-        LEGAL_ADDRESS_BPN_REFERENCE_MISSING("The BpnA Reference of the legal address is missing"),
         SITE_WRONG_LEGAL_ENTITY_REFERENCE("The legal entity is not the parent of the site"),
         ADDITIONAL_ADDRESS_WRONG_SITE_REFERENCE("The site is not the parent of the additional address"),
         ADDITIONAL_ADDRESS_WRONG_LEGAL_ENTITY_REFERENCE("The legal entity is not the parent of the additional address")
@@ -97,24 +91,17 @@ class TaskStepBuildService(
         val siteResult = processSite(businessPartnerDto, legalEntityResult.bpnReference.referenceValue!!, taskEntryBpnMapping)
         val addressResult = processAdditionalAddress(businessPartnerDto, legalEntityResult.bpnReference.referenceValue!!, siteResult?.bpnReference?.referenceValue, taskEntryBpnMapping)
 
-        //We do this for one special case:
-        //Legal Entity has not changed but site has changed and the main address is legal address
-        //In this case we want to return the most up-to-date address which is stored in the siteResult
-        val isLegalAndSiteMainAddress =  siteResult?.siteMainAddress?.bpnReference == legalEntityResult.legalAddress.bpnReference
-
-        val businessPartnerResult = with(businessPartnerDto){
-            copy(
-                legalEntity = if(isLegalAndSiteMainAddress) legalEntityResult.copy(legalAddress = siteResult!!.siteMainAddress!!) else legalEntityResult,
-                site = if(isLegalAndSiteMainAddress) siteResult?.copy(siteMainAddress = null) else siteResult,
-                additionalAddress = addressResult
-            )
-        }
+        val (updatedLegalEntityResult, updatedSiteResult, updatedAddressResult) =
+            updateConfidences(businessPartnerDto.type!!, taskEntry.recordId, legalEntityResult, siteResult, addressResult)
 
         taskEntryBpnMapping.writeCreatedMappingsToDb(bpnRequestIdentifierRepository)
-        return TaskStepResultEntryDto(
-            taskId = taskEntry.taskId,
-            businessPartner = businessPartnerResult,
-            errors = emptyList()
+
+        return buildTaskReply(
+            taskEntry.taskId,
+            businessPartnerDto,
+            updatedLegalEntityResult,
+            updatedSiteResult,
+            updatedAddressResult
         )
     }
 
@@ -128,7 +115,7 @@ class TaskStepBuildService(
         val existingLegalEntityInformation by lazy {
             businessPartnerFetchService.fetchDtosByBpns(listOf(bpnL!!))
                 .firstOrNull()
-                ?.let { taskResolutionMapper.toTaskResult(it.legalEntity, it.legalAddress, false) } ?:
+                ?.let { taskResolutionMapper.toTaskResult(it, false) } ?:
             throw BpdmValidationException("Legal entity with specified BPNL $bpnL not found")
         }
 
@@ -153,13 +140,12 @@ class TaskStepBuildService(
         val bpnL = taskEntryBpnMapping.getBpn(bpnLReference)
 
         val poolLegalEntity = toPoolDto(legalEntity)
-        val poolLegalAddress = toPoolDto(legalAddress)
 
         val legalEntityResult = if (bpnL == null) {
-            createLegalEntity(poolLegalEntity, poolLegalAddress)
+            createLegalEntity(poolLegalEntity)
         }
         else{
-            updateLegalEntity(bpnL, poolLegalEntity, poolLegalAddress)
+            updateLegalEntity(bpnL, poolLegalEntity)
         }
 
         taskEntryBpnMapping.addMapping(bpnLReference, legalEntityResult.bpnReference.referenceValue!!)
@@ -168,11 +154,10 @@ class TaskStepBuildService(
         return legalEntityResult
     }
 
-    private fun createLegalEntity(legalEntityDto: LegalEntityPoolDto, legalAddressDto: LogisticAddressPoolDto): LegalEntity {
+    private fun createLegalEntity(legalEntityDto: LegalEntityDto): LegalEntity {
 
         val createRequest = LegalEntityPartnerCreateRequest(
             legalEntity = legalEntityDto,
-            legalAddress = legalAddressDto,
             index = ""
         )
         val result = businessPartnerBuildService.createLegalEntities(listOf(createRequest))
@@ -181,18 +166,16 @@ class TaskStepBuildService(
 
         val legalEntityResult = result.entities.firstOrNull() ?: throw BpdmValidationException("Unknown error when trying to create legal entity")
 
-        return taskResolutionMapper.toTaskResult(legalEntityResult.legalEntity, legalEntityResult.legalAddress, true)
+        return taskResolutionMapper.toTaskResult(legalEntityResult.legalEntity, true)
     }
 
     private fun updateLegalEntity(
         bpnL: String,
-        legalEntityDto: LegalEntityPoolDto,
-        legalAddressDto: LogisticAddressPoolDto
+        legalEntityDto: LegalEntityDto
     ): LegalEntity {
         val updateRequest = LegalEntityPartnerUpdateRequest(
             bpnl = bpnL,
-            legalEntity = legalEntityDto,
-            legalAddress = legalAddressDto
+            legalEntity = legalEntityDto
         )
         val result = businessPartnerBuildService.updateLegalEntities(listOf(updateRequest))
         if(result.errors.isNotEmpty())
@@ -200,7 +183,7 @@ class TaskStepBuildService(
 
         val legalEntityResult = result.entities.firstOrNull() ?: throw BpdmValidationException("Unknown error when trying to update legal entity")
 
-        return taskResolutionMapper.toTaskResult(legalEntityResult.legalEntity, legalEntityResult.legalAddress, true)
+        return taskResolutionMapper.toTaskResult(legalEntityResult.legalEntity, true)
     }
 
     private fun processSite(
@@ -260,7 +243,7 @@ class TaskStepBuildService(
         val siteMainAddress = if (site.siteMainIsLegalAddress) businessPartner.legalEntity.legalAddress else site.siteMainAddress
             ?: throw BpdmValidationException(CleaningError.MAINE_ADDRESS_IS_NULL.message)
         val bpnSReference = site.bpnReference
-        val poolSite = toPoolDto(site, siteMainAddress)
+        val poolSite = toPoolDto(site.withRelevantScriptVariants(businessPartner), siteMainAddress)
         val createRequest = SitePartnerCreateRequest(
             bpnlParent = legalEntityBpn,
             site = poolSite,
@@ -284,10 +267,11 @@ class TaskStepBuildService(
         val siteMainAddress = if(site.siteMainIsLegalAddress) businessPartner.legalEntity.legalAddress else site.siteMainAddress
             ?: throw BpdmValidationException(CleaningError.MAINE_ADDRESS_IS_NULL.message)
 
+
         val bpnSReference = site.bpnReference
         val bpnS = taskEntryBpnMapping.getBpn(bpnSReference)
 
-        val poolSite = toPoolDto(site, siteMainAddress)
+        val poolSite = toPoolDto(site.withRelevantScriptVariants(businessPartner), siteMainAddress)
 
         val siteResult = if (bpnS == null) {
             createSite(poolSite, legalEntityBpn, site.siteMainAddress == null)
@@ -313,7 +297,7 @@ class TaskStepBuildService(
             val createRequest = SiteCreateRequestWithLegalAddressAsMain(
                 name = poolSite.name,
                 states = poolSite.states,
-                confidenceCriteria = poolSite.confidenceCriteria,
+                confidenceCriteria = poolSite.confidenceCriteria.copy(numberOfSharingMembers = 1),
                 bpnLParent = legalEntityBpn
             )
             businessPartnerBuildService.createSitesWithLegalAddressAsMain(listOf(createRequest))
@@ -331,6 +315,8 @@ class TaskStepBuildService(
 
         val siteResult = result.entities.firstOrNull() ?: throw BpdmValidationException("Unknown error when trying to creating site")
 
+
+
         return taskResolutionMapper.toTaskResult(siteResult.site, siteResult.mainAddress, true)
     }
 
@@ -338,10 +324,7 @@ class TaskStepBuildService(
         bpnS: String,
         poolSite: SitePoolDto,
     ): Site {
-        val updateRequest = SitePartnerUpdateRequest(
-            bpns = bpnS,
-            site = poolSite
-        )
+        val updateRequest = SitePartnerUpdateRequest(bpnS, poolSite)
         val result = businessPartnerBuildService.updateSites(listOf(updateRequest))
         if(result.errors.isNotEmpty())
             throw BpdmMultiValidationException(result.errors.map { "Error when updating site: ${it.message}" })
@@ -356,7 +339,7 @@ class TaskStepBuildService(
         legalEntityBpn: String,
         siteBpn: String?,
         taskEntryBpnMapping: TaskEntryBpnMapping
-    ): PostalAddress? {
+    ): PostalAddressWithScriptVariants? {
         val additionalAddress = businessPartner.additionalAddress ?: return null
 
         val bpnAReference = additionalAddress.bpnReference
@@ -366,7 +349,7 @@ class TaskStepBuildService(
             // No need to upsert just fetch the data
             val result = addressService.searchAddresses(AddressService.AddressSearchRequest(addressBpns = listOf(bpnA), null, null, null, null), PaginationRequest(0, 1))
                 .content.firstOrNull() ?: throw BpdmValidationException(CleaningError.BPNA_IS_NULL.message)
-            taskResolutionMapper.toTaskResult(result, false)
+            taskResolutionMapper.toTaskResult(result.address, result.scriptVariants, false)
         }else{
             upsertAdditionalAddress(additionalAddress, legalEntityBpn, siteBpn, taskEntryBpnMapping)
         }
@@ -375,21 +358,22 @@ class TaskStepBuildService(
     }
 
     private fun upsertAdditionalAddress(
-        additionalAddress: PostalAddress,
+        additionalAddress: PostalAddressWithScriptVariants,
         legalEntityBpn: String,
         siteBpn: String?,
         taskEntryBpnMapping: TaskEntryBpnMapping
-    ): PostalAddress {
+    ): PostalAddressWithScriptVariants {
         val bpnAReference = additionalAddress.bpnReference
         val bpnA = taskEntryBpnMapping.getBpn(bpnAReference)
 
-        val poolAddress = toPoolDto(additionalAddress)
+        val poolAddress = toPoolDto(additionalAddress.postalProperties)
+        val addressScriptVariants = additionalAddress.scriptVariants.map { toPoolDto(it) }
 
         val addressResult = if (bpnA == null) {
-            createLogisticAddress(poolAddress, legalEntityBpn, siteBpn)
+            createLogisticAddress(poolAddress, addressScriptVariants, legalEntityBpn, siteBpn)
         }
         else {
-            updateLogisticAddress(bpnA, poolAddress)
+            updateLogisticAddress(bpnA, poolAddress, addressScriptVariants)
         }
 
         taskEntryBpnMapping.addMapping(bpnAReference, addressResult.bpnReference.referenceValue!!)
@@ -399,13 +383,15 @@ class TaskStepBuildService(
 
     private fun createLogisticAddress(
         poolAddress: LogisticAddressPoolDto,
+        scriptVariants: List<LogisticAddressScriptVariantDto>,
         legalEntityBpn: String,
         siteBpn: String?
-    ): PostalAddress {
+    ): PostalAddressWithScriptVariants {
         val addressCreateRequest = AddressPartnerCreateRequest(
             bpnParent = siteBpn ?: legalEntityBpn,
             index = "",
-            address = poolAddress
+            address = poolAddress,
+            scriptVariants = scriptVariants
         )
         val result = businessPartnerBuildService.createAddresses(listOf(addressCreateRequest))
 
@@ -414,16 +400,18 @@ class TaskStepBuildService(
 
         val addressResult = result.entities.firstOrNull() ?: throw BpdmValidationException("Unknown error when trying to creating address")
 
-        return taskResolutionMapper.toTaskResult(addressResult.address, true)
+        return taskResolutionMapper.toTaskResult(addressResult.address, addressResult.scriptVariants, true)
     }
 
     private fun updateLogisticAddress(
         bpnA: String,
         poolAddress: LogisticAddressPoolDto,
-    ): PostalAddress {
+        scriptVariants: List<LogisticAddressScriptVariantDto>
+    ): PostalAddressWithScriptVariants {
         val addressUpdateRequest = AddressPartnerUpdateRequest(
             bpna = bpnA,
-            address =  poolAddress
+            address =  poolAddress,
+            scriptVariants = scriptVariants
         )
         val result = businessPartnerBuildService.updateAddresses(listOf(addressUpdateRequest))
 
@@ -432,12 +420,73 @@ class TaskStepBuildService(
 
         val addressResult = result.entities.firstOrNull() ?: throw BpdmValidationException("Unknown error when trying to updating address")
 
-        return  taskResolutionMapper.toTaskResult(addressResult, true)
+        return  taskResolutionMapper.toTaskResult(addressResult.address, addressResult.scriptVariants, true)
+    }
+
+    private fun updateConfidences(
+        goldenRecordType: GoldenRecordType,
+        sharingMemberRecordId: String,
+        legalEntityResult: LegalEntity,
+        siteResult: Site?,
+        additionalAddressResult: PostalAddressWithScriptVariants?
+    ): Triple<LegalEntity, Site?, PostalAddressWithScriptVariants?>{
+
+        val sharingMemberRecordBpnA = when(goldenRecordType){
+            GoldenRecordType.LegalEntity -> legalEntityResult.legalAddress.bpnReference.referenceValue!!
+            GoldenRecordType.Site -> siteResult!!.siteMainAddress!!.bpnReference.referenceValue!!
+            GoldenRecordType.Address -> additionalAddressResult!!.bpnReference.referenceValue!!
+        }
+
+        val updateResults = sharingMemberConfidenceService.updateAddress(sharingMemberRecordId, sharingMemberRecordBpnA)
+
+        val updatedLegalEntityResult =legalEntityResult.withUpdatedNumberOfSharingMembers(updateResults.updatedLegalEntities, updateResults.updatedAddresses)
+        val updatedSiteResult = siteResult?.copy(siteMainAddress = siteResult.siteMainAddress?.withUpdatedNumberOfSharingMembers(updateResults.updatedAddresses))
+        val updatedAddAddressResult = additionalAddressResult?.copyAsPostalAddress { it.withUpdatedNumberOfSharingMembers(updateResults.updatedAddresses) }
+
+        return Triple(updatedLegalEntityResult, updatedSiteResult, updatedAddAddressResult)
+    }
+
+
+    private fun buildTaskReply(
+        taskId: String,
+        originalBusinessPartner: BusinessPartner,
+        legalEntityResult: LegalEntity,
+        siteResult: Site?,
+        addressResult: PostalAddressWithScriptVariants?
+    ): TaskStepResultEntryDto{
+        //We do this for one special case:
+        //Legal Entity has not changed but site has changed and the main address is legal address
+        //In this case we want to return the most up-to-date address which is stored in the siteResult
+        val isLegalAndSiteMainAddress = siteResult?.siteMainAddress?.bpnReference == legalEntityResult.legalAddress.bpnReference
+
+        val businessPartnerResult = with(originalBusinessPartner){
+            copy(
+                legalEntity = if(isLegalAndSiteMainAddress) legalEntityResult.copy(legalAddress = siteResult.siteMainAddress!!) else legalEntityResult,
+                site = if(isLegalAndSiteMainAddress) siteResult.copy(siteMainAddress = null) else siteResult,
+                additionalAddress = addressResult
+            )
+        }
+
+        return TaskStepResultEntryDto(
+            taskId = taskId,
+            businessPartner = businessPartnerResult,
+            errors = emptyList()
+        )
+
     }
 
     private fun toPoolDto(legalEntity: LegalEntity) =
+        with(legalEntity){
+            LegalEntityDto(
+                toPoolHeaderDto(legalEntity = this),
+                toPoolDto(legalAddress),
+                scriptVariants.map { toPoolDto(it) }
+            )
+        }
+
+    private fun toPoolHeaderDto(legalEntity: LegalEntity) =
         with(legalEntity) {
-            LegalEntityPoolDto(
+            LegalEntityPoolHeaderDto(
                 legalName = legalName ?: throw BpdmValidationException(CleaningError.LEGAL_NAME_IS_NULL.message),
                 legalShortName = legalShortName,
                 legalForm = legalForm,
@@ -448,16 +497,63 @@ class TaskStepBuildService(
             )
         }
 
+    private fun toPoolDto(legalEntityScriptVariant: LegalEntityScriptVariant) =
+        with(legalEntityScriptVariant) {
+            LegalEntityScriptVariantDto(scriptCode, legalName, legalShortName, toPoolDto(legalAddress))
+        }
+
+    private fun toPoolDto(addressScriptVariant: PostalAddressScriptVariant) =
+        with(addressScriptVariant) {
+            PostalAddressScriptVariantDto(addressName,toPoolDto(physicalAddress), alternativeAddress?.let { toPoolDto(it) } )
+        }
+
+    private fun toPoolDto(physicalAddressScriptVariant: PhysicalAddressScriptVariant) =
+        with(physicalAddressScriptVariant) {
+            PhysicalAddressScriptVariantDto(
+                postalCode = postalCode,
+                city = city,
+                district = district,
+                street = toPoolDto(street),
+                companyPostalCode = companyPostalCode,
+                industrialZone = industrialZone,
+                building = building,
+                floor = floor,
+                door = door,
+                taxJurisdictionCode = taxJurisdictionCode
+            )
+        }
+
+    private fun toPoolDto(alternativeAddressScriptVariant: AlternativeAddressScriptVariant) =
+        with(alternativeAddressScriptVariant) {
+            AlternativeAddressScriptVariantDto(
+                postalCode = postalCode,
+                city = city,
+                deliveryServiceQualifier = deliveryServiceQualifier,
+                deliveryServiceNumber = deliveryServiceNumber
+            )
+        }
+
     private fun toPoolDto(site: Site, siteMainAddress: PostalAddress) =
         with(site) {
             SitePoolDto(
                 name = site.siteName ?: throw BpdmValidationException(CleaningError.SITE_NAME_MISSING.message),
                 states = states.map { assertNotNull(it).let { SiteStateDto(it.validFrom.toLocalDateTime(), it.validTo.toLocalDateTime(), it.type!!) }},
                 mainAddress = toPoolDto(siteMainAddress),
-                confidenceCriteria = toPoolDto(confidenceCriteria, CleaningError.SITE_CONFIDENCE_CRITERIA_MISSING)
+                confidenceCriteria = toPoolDto(confidenceCriteria, CleaningError.SITE_CONFIDENCE_CRITERIA_MISSING),
+                scriptVariants = scriptVariants.map { toPoolDto(it) }
             )
         }
 
+    private fun toPoolDto(siteScriptVariant: SiteScriptVariant) =
+        with(siteScriptVariant) {
+            SiteScriptVariantDto(scriptCode, siteName, toPoolDto(mainAddress))
+        }
+
+
+    private fun toPoolDto(addressScriptVariant: PostalAddressScriptVariantWithScriptCode) =
+        with(addressScriptVariant) {
+            LogisticAddressScriptVariantDto(scriptCode, toPoolDto(postalProperties))
+        }
 
     private fun toPoolDto(logisticAddress: PostalAddress) =
         with(logisticAddress) {
@@ -487,20 +583,23 @@ class TaskStepBuildService(
                 building = building,
                 floor = floor,
                 door = door,
-                street = with(street) {
-                        StreetDto(
-                            name,
-                            houseNumber,
-                            houseNumberSupplement,
-                            milestone,
-                            direction,
-                            namePrefix,
-                            additionalNamePrefix,
-                            nameSuffix,
-                            additionalNameSuffix
-                        )
-                },
+                street = toPoolDto(street),
                 taxJurisdictionCode = taxJurisdictionCode
+            )
+        }
+
+    private fun toPoolDto(street: Street) =
+        with(street) {
+            StreetDto(
+                name,
+                houseNumber,
+                houseNumberSupplement,
+                milestone,
+                direction,
+                namePrefix,
+                additionalNamePrefix,
+                nameSuffix,
+                additionalNameSuffix
             )
         }
 
@@ -555,34 +654,64 @@ class TaskStepBuildService(
         }
     }
 
-    private fun assertParentsConsistent(businessPartner: BusinessPartner, taskEntryBpnMapping: TaskEntryBpnMapping){
+    private fun assertParentsConsistent(businessPartner: BusinessPartner, taskEntryBpnMapping: TaskEntryBpnMapping) {
         val addressBpn = businessPartner.additionalAddress?.bpnReference?.let { taskEntryBpnMapping.getBpn(it) }
         val siteBpn = businessPartner.site?.bpnReference?.let { taskEntryBpnMapping.getBpn(it) }
         val legalEntityBpn = taskEntryBpnMapping.getBpn(businessPartner.legalEntity.bpnReference)
 
-        if(siteBpn != null){
+        if (siteBpn != null) {
             val foundSite = siteRepository.findByBpn(siteBpn)
-            if(foundSite != null){
-                if(foundSite.legalEntity.bpn != legalEntityBpn){
+            if (foundSite != null) {
+                if (foundSite.legalEntity.bpn != legalEntityBpn) {
                     throw BpdmValidationException(CleaningError.SITE_WRONG_LEGAL_ENTITY_REFERENCE.message)
                 }
             }
         }
 
-        if(addressBpn != null){
+        if (addressBpn != null) {
             val foundAddress = logisticAddressRepository.findByBpn(addressBpn)
-            if(foundAddress != null){
-                if(foundAddress.legalEntity!!.bpn != legalEntityBpn){
+            if (foundAddress != null) {
+                if (foundAddress.legalEntity!!.bpn != legalEntityBpn) {
                     throw BpdmValidationException(CleaningError.ADDITIONAL_ADDRESS_WRONG_LEGAL_ENTITY_REFERENCE.message)
                 }
-                if(foundAddress.site != null){
-                    if(foundAddress.site!!.bpn != siteBpn){
+                if (foundAddress.site != null) {
+                    if (foundAddress.site!!.bpn != siteBpn) {
                         throw BpdmValidationException(CleaningError.ADDITIONAL_ADDRESS_WRONG_SITE_REFERENCE.message)
                     }
                 }
             }
         }
+    }
 
+    private fun PostalAddress.withUpdatedNumberOfSharingMembers(fromCandidates: Collection<LogisticAddressDb>): PostalAddress{
+        return copy(
+            confidenceCriteria = confidenceCriteria.copy(numberOfSharingMembers = fromCandidates.find { it.bpn == this.bpnReference.referenceValue }?.confidenceCriteria?.numberOfSharingMembers ?: confidenceCriteria.numberOfSharingMembers )
+        )
+    }
 
+    private fun LegalEntity.withUpdatedNumberOfSharingMembers(legalEntityCandidates: Collection<LegalEntityDb>, legalAddressCandidates: Collection<LogisticAddressDb>): LegalEntity{
+        return copy(
+            confidenceCriteria = confidenceCriteria.copy(numberOfSharingMembers = legalEntityCandidates.find { it.bpn == this.bpnReference.referenceValue }?.confidenceCriteria?.numberOfSharingMembers ?: confidenceCriteria.numberOfSharingMembers),
+            legalAddress = legalAddress.withUpdatedNumberOfSharingMembers(legalAddressCandidates)
+        )
+    }
+
+    private fun Site.withRelevantScriptVariants(businessPartner: BusinessPartner): Site {
+       val scriptVariants =  if(siteMainIsLegalAddress){
+            val legalEntityVariantsByCode = businessPartner.legalEntity.scriptVariants.associateBy { it.scriptCode }
+            val siteVariantsByCode = scriptVariants.associateBy { it.scriptCode }
+            val allScriptCodes = legalEntityVariantsByCode.keys.plus(siteVariantsByCode.keys)
+
+           allScriptCodes.map { scriptCode ->
+               val legalEntityVariant = legalEntityVariantsByCode[scriptCode]
+               val siteVariant = siteVariantsByCode[scriptCode] ?: SiteScriptVariant(scriptCode, "", org.eclipse.tractusx.orchestrator.api.model.PostalAddressScriptVariant.empty)
+
+               val mainAddressVariant = legalEntityVariant?.legalAddress ?: siteVariant.mainAddress
+
+               siteVariant.copy(mainAddress = mainAddressVariant)
+           }
+        }else { scriptVariants }
+
+        return copy(scriptVariants = scriptVariants)
     }
 }

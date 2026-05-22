@@ -69,11 +69,11 @@ ingress:
 
 resources:
   limits:
-    cpu: 1000m
-    memory: 1Gi
+    cpu: 1
+    memory: 1200Mi
   requests:
     cpu: 100m
-    memory: 1Gi
+    memory: 1200Mi
 
 nodeSelector: {}
 
@@ -128,17 +128,3 @@ startupProbe:
 applicationConfig:
 
 applicationSecrets:
-  spring:
-    dataSource:
-      # Change this password for production
-      password: &postgresPass  bpdm
-
-postgres:
-  enabled: false
-  auth:
-    database: bpdm
-    username: bpdm
-    password: *postgresPass
-
-centralidp:
-  enabled: true

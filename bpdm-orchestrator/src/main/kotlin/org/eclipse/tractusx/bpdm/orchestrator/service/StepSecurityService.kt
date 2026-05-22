@@ -32,8 +32,11 @@ class StepSecurityService(
 
     private val defaultPermissions = PermissionConfigProperties()
 
+
+    //Is being used by Pre-Authorize annotations
+    @Suppress("unused")
     fun assertHasReservationAuthority(authentication: Authentication, step: TaskStep){
-        val authorities = authentication.authorities.map { it.authority.uppercase() }
+        val authorities = authentication.authorities.mapNotNull { it.authority?.uppercase() }
 
         val expectedAuthority = permissionConfigProperties.reservation[step]
             ?: defaultPermissions.reservation[step]
@@ -42,8 +45,10 @@ class StepSecurityService(
             ?: throw AccessDeniedException("Insufficient permissions")
     }
 
+    //Is being used by Pre-Authorize annotations
+    @Suppress("unused")
     fun assertHasResultAuthority(authentication: Authentication, step: TaskStep){
-        val authorities = authentication.authorities.map { it.authority.uppercase() }
+        val authorities = authentication.authorities.mapNotNull { it.authority?.uppercase() }
 
         val expectedAuthority = permissionConfigProperties.result[step]
             ?: defaultPermissions.result[step]

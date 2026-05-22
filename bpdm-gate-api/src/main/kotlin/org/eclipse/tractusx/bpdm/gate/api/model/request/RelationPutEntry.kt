@@ -20,8 +20,11 @@
 package org.eclipse.tractusx.bpdm.gate.api.model.request
 
 import io.swagger.v3.oas.annotations.media.Schema
+import org.eclipse.tractusx.bpdm.common.dto.openapidescription.RelationDescription
+import org.eclipse.tractusx.bpdm.common.dto.openapidescription.RelationValidityPeriodDescription
 import org.eclipse.tractusx.bpdm.gate.api.model.IRelationDto
 import org.eclipse.tractusx.bpdm.gate.api.model.RelationType
+import org.eclipse.tractusx.bpdm.gate.api.model.RelationValidityPeriodDto
 
 @Schema(description = "A request to update the content of the given business partner relation")
 data class RelationPutEntry(
@@ -32,5 +35,9 @@ data class RelationPutEntry(
     @Schema(description = "The external identifier of the business partner from which the relation should emerge (the source)")
     override val businessPartnerSourceExternalId: String,
     @Schema(description = "The external identifier of the business partner to which the relation should point (the target)")
-    override val businessPartnerTargetExternalId: String
+    override val businessPartnerTargetExternalId: String,
+    @get:Schema(description = RelationDescription.reasonCode)
+    val reasonCode: String?,
+    @Schema(description = RelationValidityPeriodDescription.header)
+    val validityPeriods: List<RelationValidityPeriodDto> = listOf(),
 ): IRelationDto

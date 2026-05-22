@@ -20,7 +20,6 @@
 package org.eclipse.tractusx.bpdm.gate.api.model.request
 
 import io.swagger.v3.oas.annotations.media.Schema
-import org.eclipse.tractusx.bpdm.gate.api.model.RelationType
 import org.eclipse.tractusx.bpdm.gate.api.model.SharableRelationType
 import java.time.Instant
 
@@ -31,9 +30,9 @@ data class RelationOutputSearchRequest(
     @Schema(description = "Only show relations of the given type")
     val relationType: SharableRelationType? = null,
     @Schema(description = "Only show relations which have the given business partners as sources")
-    val sourceBpnLs: List<String>? = null,
+    val sourceBpns: List<String>? = null,
     @Schema(description = "Only show relations which have the given business partners as targets")
-    val targetBpnLs: List<String>? = null,
+    val targetBpns: List<String>? = null,
     @Schema(description = "Only show relations which have been modified after the given time stamp")
     val updatedAtFrom: Instant? = null,
 )
