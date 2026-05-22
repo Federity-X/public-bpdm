@@ -20,7 +20,6 @@
 package org.eclipse.tractusx.bpdm.gate.service
 
 import com.opencsv.CSVWriter
-import mu.KotlinLogging
 import org.eclipse.tractusx.bpdm.common.dto.PaginationRequest
 import org.eclipse.tractusx.bpdm.gate.api.model.response.BusinessPartnerInputDto
 import org.eclipse.tractusx.bpdm.gate.model.PartnerUploadFileHeader
@@ -41,8 +40,6 @@ class PartnerUploadService(
     private val poolApiClient: PoolApiClient
 ) {
 
-    private val logger = KotlinLogging.logger { }
-
     fun processFile(file: MultipartFile, tenantBpnl: String?): ResponseEntity<Collection<BusinessPartnerInputDto>> {
         validateTenantBpnl(tenantBpnl)
         val legalName = poolApiClient.legalEntities
@@ -53,7 +50,7 @@ class PartnerUploadService(
                 require(entities.isNotEmpty()) { "No legal entities found for tenantBpnl: $tenantBpnl" }
                 require(entities.size == 1) { "Multiple legal entities found for tenantBpnl: $tenantBpnl" }
             }
-            .first().legalEntity.legalName
+            .first().header.legalName
         val csvData: List<PartnerUploadFileRow> = PartnerFileUtil.parseCsv(file)
         val businessPartnerDtos = PartnerFileUtil.validateAndMapToBusinessPartnerInputRequests(csvData, tenantBpnl, legalName)
         val result = businessPartnerService.upsertBusinessPartnersInput(businessPartnerDtos, tenantBpnl)

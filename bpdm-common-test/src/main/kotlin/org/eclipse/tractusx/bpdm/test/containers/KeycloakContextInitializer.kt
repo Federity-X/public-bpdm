@@ -21,10 +21,7 @@ package org.eclipse.tractusx.bpdm.test.containers
 
 import dasniko.testcontainers.keycloak.KeycloakContainer
 import org.eclipse.tractusx.bpdm.test.config.SelfClientConfigProperties
-import org.eclipse.tractusx.bpdm.test.containers.KeyCloakInitializer.Companion.TENANT_BPNL
 import org.eclipse.tractusx.bpdm.test.containers.KeyCloakInitializer.Companion.keycloakContainer
-import org.keycloak.representations.idm.ClientRepresentation
-import org.keycloak.representations.idm.ProtocolMapperRepresentation
 import org.springframework.boot.test.util.TestPropertyValues
 import org.springframework.context.ApplicationContextInitializer
 import org.springframework.context.ConfigurableApplicationContext
@@ -34,51 +31,50 @@ import org.springframework.context.ConfigurableApplicationContext
  */
 class KeyCloakInitializer: ApplicationContextInitializer<ConfigurableApplicationContext>{
     companion object{
-        val keycloakContainer: KeycloakContainer = KeycloakContainer("quay.io/keycloak/keycloak:23.0")
-            .withRealmImportFile("keycloak/CX-Central.json")
+        val keycloakContainer: KeycloakContainer = KeycloakContainer("docker.io/keycloak/keycloak:26.5.6@sha256:8d44614c74798322c4e07fbe0ecb15cfbb5879d69b484628555f58ade06f0d8c")
+            .withRealmImportFile("keycloak/BPDM-realm.json")
 
-        const val REALM =  "CX-Central"
-        const val TENANT_BPNL = "BPNL00000003CRHK"
-        const val ROLE_MANAGEMENT_CLIENT = "technical_roles_management"
+        const val REALM =  "BPDM"
+        const val TENANT_BPNL = "BPNL000000000001"
 
-        const val CLIENT_ID_OPERATOR = "bpdm-operator"
-        const val CLIENT_ID_SHARING_MEMBER = "bpdm-sharing-member"
-        const val CLIENT_ID_PARTICIPANT = "bpdm-participant"
-        const val CLIENT_ID_UNAUTHORIZED = "bpdm-unauthorized"
+        const val CLIENT_ID_OPERATOR = "admin"
+        const val CLIENT_ID_SHARING_MEMBER = "sharing-member"
+        const val CLIENT_ID_PARTICIPANT = "participant"
+        const val CLIENT_ID_UNAUTHORIZED = "unauthorized"
 
-        private var isClientsInitialized = false
+        const val CLIENT_ID_GATE_INPUT_MANAGER = "gate-input-manager"
+        const val CLIENT_ID_GATE_INPUT_CONSUMER = "gate-input-consumer"
+        const val CLIENT_ID_GATE_OUTPUT_CONSUMER = "gate-output-consumer"
 
-        lateinit var operatorClientSecret: String
-        lateinit var sharingMemberClientSecret: String
-        lateinit var participantClientSecret: String
-        lateinit var unauthorizedClientSecret: String
+        const val CLIENT_ID_ORCHESTRATOR_PROCESSOR_POOL_SYNC = "refiner-pool-sync"
+        const val CLIENT_ID_ORCHESTRATOR_PROCESSOR_CLEAN_AND_SYNC = "refiner-clean-and-sync"
+        const val CLIENT_ID_ORCHESTRATOR_PROCESSOR_CLEAN = "refiner-clean"
+        const val CLIENT_ID_ORCHESTRATOR_TASK_CREATOR = "task-creator"
+
+        private const val OWN_PROVIDER_ID = "test-keycloak"
+
+        private var isContainerInitialized = false
     }
 
-    lateinit var clientFactory: KeycloakClientFactory
-
     override fun initialize(applicationContext: ConfigurableApplicationContext) {
-        keycloakContainer.start()
-
-        if(!isClientsInitialized)
-            initializeClients()
+        if(!isContainerInitialized){
+            initializeContainer()
+        }
 
         val authServerUrl = keycloakContainer.authServerUrl.trimEnd('/')
+        val issuerUri = "$authServerUrl/realms/$REALM"
 
         TestPropertyValues.of(
             "bpdm.security.auth-server-url=$authServerUrl",
-            "bpdm.security.realm=$REALM"
+            "bpdm.security.realm=$REALM",
+            "spring.security.oauth2.client.provider.${OWN_PROVIDER_ID}.issuer-uri=${issuerUri}"
         ).applyTo(applicationContext)
     }
 
-    private fun initializeClients(){
-        clientFactory = KeycloakClientFactory()
+    private fun initializeContainer(){
+        keycloakContainer.start()
 
-        operatorClientSecret = clientFactory.createClient(CLIENT_ID_OPERATOR, "BPDM Pool Admin")
-        sharingMemberClientSecret = clientFactory.createClient(CLIENT_ID_SHARING_MEMBER, "BPDM Pool Sharing Consumer")
-        participantClientSecret = clientFactory.createClient(CLIENT_ID_PARTICIPANT, "BPDM Pool Consumer")
-        unauthorizedClientSecret = clientFactory.createClient(CLIENT_ID_UNAUTHORIZED, null)
-
-        isClientsInitialized = true
+        isContainerInitialized = true
     }
 }
 
@@ -106,97 +102,4 @@ abstract class SelfClientInitializer:  ApplicationContextInitializer<Configurabl
             "${SelfClientConfigProperties.PREFIX}.registration.client-secret=$clientSecret"
         ).applyTo(applicationContext)
     }
-}
-
-/**
- * Creates a new Keycloak client with a given role available in the [KeyCloakInitializer.ROLE_MANAGEMENT_CLIENT]
- * and configures the tests to use that created client for authentication with the API under test.
- *
- * If the roleName is null just creates a user with no roles and permissions attached to it
- *
- * Requires a Keycloak configuration
- */
-abstract class CreateNewSelfClientInitializer: SelfClientInitializer(){
-
-    val clientFactory: KeycloakClientFactory = KeycloakClientFactory()
-
-    abstract val roleName: String?
-
-    override fun initialize(applicationContext: ConfigurableApplicationContext) {
-        clientFactory.createClient(clientId, roleName)
-        super.initialize(applicationContext)
-    }
-}
-
-class KeycloakClientFactory{
-    fun createClient(clientId: String, roleName: String?): String{
-        val adminClient = keycloakContainer.keycloakAdminClient
-        val realm = adminClient.realm(KeyCloakInitializer.REALM)
-        val clients = realm.clients()
-
-        val roleManagementClientUuid = clients.findByClientId(KeyCloakInitializer.ROLE_MANAGEMENT_CLIENT).first().id
-        val roleManagementClient =  clients.get(roleManagementClientUuid)
-        val role = roleName?.let { roleManagementClient.roles().list().find { it.name == roleName } }
-
-        clientId.let { clientToCreate ->
-            clients.create(ClientRepresentation().apply {
-                this.clientId = clientToCreate
-                this.isServiceAccountsEnabled = true
-            })
-        }
-
-        val createdClientUuid = clients.findByClientId(clientId).first().id
-
-
-        val newProtocolMapper = ProtocolMapperRepresentation().apply {
-            name = "BPN"
-            protocol = "openid-connect"
-            protocolMapper = "oidc-usermodel-attribute-mapper"
-            config = mapOf(
-                "introspection.token.claim" to "true",
-                "userinfo.token.claim" to "true",
-                "user.attribute" to "bpn",
-                "id.token.claim" to "true",
-                "access.token.claim" to "true",
-                "claim.name" to "bpn",
-                "jsonType.label" to "String"
-            )
-        }
-
-        val createdClient = clients.get(createdClientUuid)
-
-        createdClient
-            .protocolMappers
-            .createMapper(newProtocolMapper)
-
-        val newServiceAccount = clients
-            .get(createdClientUuid)
-            .serviceAccountUser
-
-        newServiceAccount.attributes = mutableMapOf(Pair("bpn", listOf(TENANT_BPNL)))
-
-        realm.users()
-            .get(newServiceAccount.id)
-            .update(newServiceAccount)
-
-        if(role != null){
-            realm.users()
-                .get(newServiceAccount.id)
-                .roles()
-                .clientLevel(roleManagementClient.toRepresentation().id)
-                .add(listOf(role))
-        }
-
-        return createdClient.secret.value
-    }
-}
-
-/**
- * Creates a new client having no permissions attached with it
- */
-class AuthenticatedSelfClient: CreateNewSelfClientInitializer(){
-    override val roleName: String?
-        get() = null
-    override val clientId: String
-        get() = "AuthenticatedClient"
 }

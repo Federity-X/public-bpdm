@@ -31,13 +31,8 @@ import org.eclipse.tractusx.bpdm.gate.entity.SyncTypeDb
 import org.eclipse.tractusx.bpdm.gate.entity.generic.BusinessPartnerDb
 import org.eclipse.tractusx.bpdm.gate.model.upsert.output.OutputUpsertData
 import org.eclipse.tractusx.bpdm.gate.repository.SharingStateRepository
-import org.eclipse.tractusx.bpdm.gate.repository.SyncRecordRepository
 import org.eclipse.tractusx.bpdm.gate.repository.generic.BusinessPartnerRepository
 import org.eclipse.tractusx.orchestrator.api.client.OrchestrationApiClient
-import org.eclipse.tractusx.orchestrator.api.model.ResultState
-import org.eclipse.tractusx.orchestrator.api.model.TaskClientStateDto
-import org.eclipse.tractusx.orchestrator.api.model.TaskResultStateSearchRequest
-import org.eclipse.tractusx.orchestrator.api.model.TaskStateRequest
 import org.eclipse.tractusx.orchestrator.api.model.*
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
@@ -99,8 +94,8 @@ class TaskResolutionChunkService(
     private val businessPartnerService: BusinessPartnerService,
     private val orchestratorMappings: OrchestratorMappings,
     private val synchRecordService: SyncRecordService,
-    private val syncRecordRepository: SyncRecordRepository,
-    private val goldenRecordUpdateService: GoldenRecordUpdateChunkService
+    private val goldenRecordUpdateService: GoldenRecordUpdateChunkService,
+    private val goldenRecordCountedService: GoldenRecordCountedService
 ) {
 
     private val logger = KotlinLogging.logger { }
@@ -154,11 +149,7 @@ class TaskResolutionChunkService(
         resolveAsUpserts(successes)
         resolveAsErrors(errors)
 
-        events.content.lastOrNull()?.let { latestEvent ->
-            syncRecord.fromTime = latestEvent.timestamp
-            syncRecordRepository.save(syncRecord)
-        }
-
+        synchRecordService.updateRecord(syncRecord, events.content.lastOrNull()?.timestamp)
 
         logger.debug { "Resolved ${successes.size} tasks as successful, ${errors.size} as errors and ${unresolved.size} still unresolved" }
 
@@ -220,6 +211,8 @@ class TaskResolutionChunkService(
         // check against the Pool again in case the business partner data is already outdated
         goldenRecordUpdateService.updateAgainstPool(upsertResults.map { it.businessPartner })
         requests.forEach { sharingStateService.setSuccess(it.sharingState) }
+
+        goldenRecordCountedService.setIsGoldenRecordCounted(upsertResults.map { it.businessPartner })
     }
 
     private fun resolveAsErrors(errors: List<RequestCreationResult>) {

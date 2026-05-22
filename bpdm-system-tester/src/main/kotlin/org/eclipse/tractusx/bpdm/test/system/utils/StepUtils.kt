@@ -40,7 +40,7 @@ class StepUtils(
 
     fun waitForBusinessPartnerResult(externalId: String): SharingStateType = runBlocking {
         println("Waiting for business partner result for $externalId ...")
-        withTimeout(Duration.ofMinutes(3)) {
+        withTimeout(Duration.ofMinutes(4)) {
             while (true) {
                 val sharingState = gateClient.sharingState.getSharingStates(PaginationRequest(), listOf(externalId)).content.single()
                 if (sharingState.sharingStateType == SharingStateType.Success || sharingState.sharingStateType == SharingStateType.Error) {
@@ -51,9 +51,24 @@ class StepUtils(
         } as SharingStateType
     }
 
+    fun waitForBusinessPartnerResultConfidenceSync(externalId: String, expectedLegalEntityNumberOfSharingMembers: Int): BusinessPartnerOutputDto = runBlocking {
+        println("Waiting for business partner result confidences to stabilize for $externalId ...")
+        withTimeout(Duration.ofMinutes(2)) {
+            while (true) {
+                val currentOutput = gateClient.businessParters.getBusinessPartnersOutput(listOf(externalId), PaginationRequest()).content.single()
+                if(currentOutput.address.confidenceCriteria.numberOfSharingMembers == 1
+                    && currentOutput.legalEntity.confidenceCriteria.numberOfSharingMembers == expectedLegalEntityNumberOfSharingMembers){
+                    return@withTimeout currentOutput
+                }
+                delay(Duration.ofSeconds(10))
+            }
+        } as BusinessPartnerOutputDto
+    }
+
+
     fun waitForRelationResult(externalId: String): RelationSharingStateType = runBlocking {
         println("Waiting for relation result for $externalId ...")
-        withTimeout(Duration.ofMinutes(3)) {
+        withTimeout(Duration.ofMinutes(4)) {
             while (true) {
                 val sharingState = gateClient.relationSharingState.get(externalIds = listOf(externalId)).content.single()
                 if (sharingState.sharingStateType == RelationSharingStateType.Success || sharingState.sharingStateType == RelationSharingStateType.Error) {
@@ -66,7 +81,7 @@ class StepUtils(
 
     fun waitForRelationTask(externalId: String): String = runBlocking {
         println("Waiting relation getting task assigned for $externalId ...")
-        withTimeout(Duration.ofMinutes(3)) {
+        withTimeout(Duration.ofMinutes(4)) {
             while (true) {
                 val sharingState = gateClient.relationSharingState.get(externalIds = listOf(externalId)).content.single()
                 if(sharingState.taskId != null)

@@ -20,7 +20,11 @@
 bpdm:
   tasks:
     cron: '-'
+  sharingMemberRecords:
+    cron: '-'
+  eventTriggers:
+    cron: '-'
 spring:
   datasource:
     hikari:
-      maximum-pool-size: 5
+      maximum-pool-size: 2

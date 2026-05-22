@@ -19,29 +19,30 @@
 
 package org.eclipse.tractusx.bpdm.gate.entity
 
-import jakarta.persistence.Column
-import jakarta.persistence.Embeddable
-import jakarta.persistence.EnumType
-import jakarta.persistence.Enumerated
-import org.eclipse.tractusx.bpdm.gate.api.model.RelationType
+import jakarta.persistence.*
+import org.eclipse.tractusx.bpdm.common.model.BaseEntity
 import org.eclipse.tractusx.bpdm.gate.api.model.SharableRelationType
 import java.time.Instant
 
-@Embeddable
-data class RelationOutputDb (
+@Entity
+@Table(name = "relation_outputs")
+class RelationOutputDb(
     @Enumerated(EnumType.STRING)
-    @Column(name = "output_relation_type")
+    @Column(name = "relation_type", nullable = false)
     var relationType: SharableRelationType,
-    @Column(name = "output_source_bpnl")
-    var sourceBpnL: String,
-    @Column(name = "output_target_bpnl")
-    var targetBpnL: String,
-    @Column(name = "output_updated_at")
-    var updatedAt: Instant,
-): Comparable<RelationOutputDb>{
-    override fun compareTo(other: RelationOutputDb) = compareBy(
-        RelationOutputDb::sourceBpnL,
-        RelationOutputDb::targetBpnL,
-        RelationOutputDb::relationType
-    ).compare(this, other)
-}
+    @Column(name = "source_bpn", nullable = false)
+    var sourceBpn: String,
+    @Column(name = "target_bpn", nullable = false)
+    var targetBpn: String,
+    @Column(name = "result_updated_at", nullable = false)
+    var resultUpdatedAt: Instant,
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(
+        name = "relation_output_validity_periods",
+        joinColumns = [JoinColumn(name = "output_id", foreignKey = ForeignKey(name = "fk_output_validity_periods_relation"))],
+        indexes = [Index(name = "idx_output_validity_periods_relation_id", columnList = "output_id")]
+    )
+    var validityPeriods: MutableList<RelationValidityPeriodDb>,
+    @Column(name = "reason_code")
+    var reasonCode: String?
+) : BaseEntity()

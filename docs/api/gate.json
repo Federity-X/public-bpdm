@@ -3,7 +3,7 @@
   "info" : {
     "title" : "Business Partner Data Management Gate",
     "description" : "A gate for a member to share business partner data with CatenaX",
-    "version" : "7.2.0-SNAPSHOT"
+    "version" : "7.4.0-rc1"
   },
   "servers" : [ {
     "url" : "http://localhost:8081",
@@ -170,7 +170,7 @@
           "schema" : {
             "type" : "string",
             "description" : "Only show relations of the given type",
-            "enum" : [ "IsManagedBy", "IsAlternativeHeadquarterFor", "IsOwnedBy" ]
+            "enum" : [ "IsManagedBy", "IsAlternativeHeadquarterFor", "IsOwnedBy", "IsReplacedBy" ]
           }
         }, {
           "name" : "businessPartnerSourceExternalIds",
@@ -234,7 +234,7 @@
             "content" : {
               "application/json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/PageDtoRelationDto"
+                  "$ref" : "#/components/schemas/PageDtoRelationV6Dto"
                 }
               }
             }
@@ -260,7 +260,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/RelationPutEntry"
+                "$ref" : "#/components/schemas/RelationPutEntryV6"
               }
             }
           },
@@ -272,7 +272,7 @@
             "content" : {
               "application/json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/RelationDto"
+                  "$ref" : "#/components/schemas/RelationV6Dto"
                 }
               }
             }
@@ -310,7 +310,7 @@
             "content" : {
               "application/json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/RelationDto"
+                  "$ref" : "#/components/schemas/RelationV6Dto"
                 }
               }
             }
@@ -1615,9 +1615,50 @@
             "items" : {
               "$ref" : "#/components/schemas/BusinessPartnerStateDto"
             }
+          },
+          "identifiers" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/AddressIdentifierDto"
+            }
+          },
+          "goldenRecordRelations" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/AddressGoldenRecordRelationDto"
+            }
           }
         },
-        "required" : [ "addressBpn", "bpnA", "confidenceCriteria", "physicalPostalAddress", "states" ]
+        "required" : [ "bpnA" ]
+      },
+      "AddressGoldenRecordRelationDto" : {
+        "type" : "object",
+        "properties" : {
+          "relationType" : {
+            "type" : "string",
+            "enum" : [ "IsReplacedBy" ]
+          },
+          "sourceBpn" : {
+            "type" : "string"
+          },
+          "targetBpn" : {
+            "type" : "string"
+          }
+        }
+      },
+      "AddressIdentifierDto" : {
+        "type" : "object",
+        "description" : "An address identifier (uniquely) identifies the address, such as the Global Location Number (GLN).",
+        "properties" : {
+          "value" : {
+            "type" : "string",
+            "description" : "The value of the identifier like \"0847976000005\"."
+          },
+          "type" : {
+            "type" : "string",
+            "description" : "The type of the identifier."
+          }
+        }
       },
       "AddressRepresentationInputDto" : {
         "type" : "object",
@@ -1649,8 +1690,38 @@
               "$ref" : "#/components/schemas/BusinessPartnerStateDto"
             }
           }
-        },
-        "required" : [ "physicalPostalAddress", "states" ]
+        }
+      },
+      "AddressScriptVariantDto" : {
+        "type" : "object",
+        "properties" : {
+          "name" : {
+            "type" : "string"
+          },
+          "physicalAddress" : {
+            "$ref" : "#/components/schemas/PhysicalAddressScriptVariantDto"
+          },
+          "alternativeAddress" : {
+            "$ref" : "#/components/schemas/AlternativeAddressScriptVariantDto"
+          }
+        }
+      },
+      "AlternativeAddressScriptVariantDto" : {
+        "type" : "object",
+        "properties" : {
+          "postalCode" : {
+            "type" : "string"
+          },
+          "city" : {
+            "type" : "string"
+          },
+          "deliveryServiceQualifier" : {
+            "type" : "string"
+          },
+          "deliveryServiceNumber" : {
+            "type" : "string"
+          }
+        }
       },
       "AlternativePostalAddressDto" : {
         "type" : "object",
@@ -1718,32 +1789,32 @@
           },
           "nameParts" : {
             "type" : "array",
+            "description" : "The list of name parts to accommodate the different number of name fields in different systems.",
             "items" : {
               "type" : "string"
             }
           },
           "identifiers" : {
             "type" : "array",
+            "description" : "The list of identifiers of the business partner. Sorted and duplicates removed by the service.",
             "items" : {
               "$ref" : "#/components/schemas/BusinessPartnerIdentifierDto"
             }
           },
           "states" : {
             "type" : "array",
+            "description" : "The list of (temporary) states of the business partner. Sorted and duplicates removed by the service.",
             "items" : {
               "$ref" : "#/components/schemas/BusinessPartnerStateDto"
             }
           },
           "roles" : {
             "type" : "array",
+            "description" : "One or more of the roles, the business partner assumes with respect to the sharing member: Supplier, Customer. Sorted and duplicates removed by the service.",
             "items" : {
               "type" : "string",
               "enum" : [ "SUPPLIER", "CUSTOMER", "ONE_TIME_SUPPLIER", "ONE_TIME_CUSTOMER" ]
             }
-          },
-          "isOwnCompanyData" : {
-            "type" : "boolean",
-            "description" : "Indicates whether the sharing member claims (in the initial upload) the business partner to belong to the company data of the sharing member."
           },
           "legalEntity" : {
             "$ref" : "#/components/schemas/LegalEntityRepresentationInputDto",
@@ -1762,6 +1833,12 @@
             "format" : "date-time",
             "description" : "The timestamp indicates the last time point of change from the user side"
           },
+          "scriptVariants" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/BusinessPartnerScriptVariantDto"
+            }
+          },
           "createdAt" : {
             "type" : "string",
             "format" : "date-time",
@@ -1771,9 +1848,13 @@
             "type" : "string",
             "format" : "date-time",
             "description" : "The date when the data record has been last updated."
+          },
+          "isOwnCompanyData" : {
+            "type" : "boolean",
+            "description" : "Indicates whether the sharing member claims (in the initial upload) the business partner to belong to the company data of the sharing member."
           }
         },
-        "required" : [ "address", "bpnA", "bpnL", "createdAt", "externalId", "identifiers", "isOwnCompanyData", "legalEntity", "nameParts", "postalAddress", "roles", "site", "states", "updatedAt" ]
+        "required" : [ "bpnA", "bpnL", "externalId", "postalAddress" ]
       },
       "BusinessPartnerInputRequest" : {
         "type" : "object",
@@ -1785,32 +1866,32 @@
           },
           "nameParts" : {
             "type" : "array",
+            "description" : "The list of name parts to accommodate the different number of name fields in different systems.",
             "items" : {
               "type" : "string"
             }
           },
           "identifiers" : {
             "type" : "array",
+            "description" : "The list of identifiers of the business partner. Sorted and duplicates removed by the service.",
             "items" : {
               "$ref" : "#/components/schemas/BusinessPartnerIdentifierDto"
             }
           },
           "states" : {
             "type" : "array",
+            "description" : "The list of (temporary) states of the business partner. Sorted and duplicates removed by the service.",
             "items" : {
               "$ref" : "#/components/schemas/BusinessPartnerStateDto"
             }
           },
           "roles" : {
             "type" : "array",
+            "description" : "One or more of the roles, the business partner assumes with respect to the sharing member: Supplier, Customer. Sorted and duplicates removed by the service.",
             "items" : {
               "type" : "string",
               "enum" : [ "SUPPLIER", "CUSTOMER", "ONE_TIME_SUPPLIER", "ONE_TIME_CUSTOMER" ]
             }
-          },
-          "isOwnCompanyData" : {
-            "type" : "boolean",
-            "description" : "Indicates whether the sharing member claims (in the initial upload) the business partner to belong to the company data of the sharing member."
           },
           "legalEntity" : {
             "$ref" : "#/components/schemas/LegalEntityRepresentationInputDto",
@@ -1828,9 +1909,19 @@
             "type" : "string",
             "format" : "date-time",
             "description" : "The timestamp indicates the last time point of change from the user side"
+          },
+          "scriptVariants" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/BusinessPartnerScriptVariantDto"
+            }
+          },
+          "isOwnCompanyData" : {
+            "type" : "boolean",
+            "description" : "Indicates whether the sharing member claims (in the initial upload) the business partner to belong to the company data of the sharing member."
           }
         },
-        "required" : [ "address", "externalId", "identifiers", "isOwnCompanyData", "legalEntity", "nameParts", "roles", "site", "states" ]
+        "required" : [ "externalId" ]
       },
       "BusinessPartnerOutputDto" : {
         "type" : "object",
@@ -1842,32 +1933,32 @@
           },
           "nameParts" : {
             "type" : "array",
+            "description" : "The list of name parts to accommodate the different number of name fields in different systems.",
             "items" : {
               "type" : "string"
             }
           },
           "identifiers" : {
             "type" : "array",
+            "description" : "The list of identifiers of the business partner. Sorted and duplicates removed by the service.",
             "items" : {
               "$ref" : "#/components/schemas/BusinessPartnerIdentifierDto"
             }
           },
           "states" : {
             "type" : "array",
+            "description" : "The list of (temporary) states of the business partner. Sorted and duplicates removed by the service.",
             "items" : {
               "$ref" : "#/components/schemas/BusinessPartnerStateDto"
             }
           },
           "roles" : {
             "type" : "array",
+            "description" : "One or more of the roles, the business partner assumes with respect to the sharing member: Supplier, Customer. Sorted and duplicates removed by the service.",
             "items" : {
               "type" : "string",
               "enum" : [ "SUPPLIER", "CUSTOMER", "ONE_TIME_SUPPLIER", "ONE_TIME_CUSTOMER" ]
             }
-          },
-          "isOwnCompanyData" : {
-            "type" : "boolean",
-            "description" : "Indicates whether the sharing member claims (in the initial upload) the business partner to belong to the company data of the sharing member."
           },
           "legalEntity" : {
             "$ref" : "#/components/schemas/LegalEntityRepresentationOutputDto",
@@ -1886,6 +1977,12 @@
             "format" : "date-time",
             "description" : "The timestamp indicates the last time point of change from the user side"
           },
+          "scriptVariants" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/BusinessPartnerScriptVariantDto"
+            }
+          },
           "createdAt" : {
             "type" : "string",
             "format" : "date-time",
@@ -1895,9 +1992,36 @@
             "type" : "string",
             "format" : "date-time",
             "description" : "The date when the data record has been last updated."
+          },
+          "isOwnCompanyData" : {
+            "type" : "boolean",
+            "description" : "Indicates whether the sharing member claims (in the initial upload) the business partner to belong to the company data of the sharing member."
           }
         },
-        "required" : [ "address", "createdAt", "externalId", "identifiers", "isOwnCompanyData", "legalEntity", "nameParts", "roles", "states", "updatedAt" ]
+        "required" : [ "externalId" ]
+      },
+      "BusinessPartnerScriptVariantDto" : {
+        "type" : "object",
+        "properties" : {
+          "scriptCode" : {
+            "type" : "string"
+          },
+          "nameParts" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "legalEntity" : {
+            "$ref" : "#/components/schemas/LegalEntityScriptVariantDto"
+          },
+          "site" : {
+            "$ref" : "#/components/schemas/SiteScriptVariantDto"
+          },
+          "address" : {
+            "$ref" : "#/components/schemas/AddressScriptVariantDto"
+          }
+        }
       },
       "BusinessPartnerStateDto" : {
         "type" : "object",
@@ -1937,8 +2061,7 @@
             "description" : "One of the actions for which the changelog entry was created: create, update.",
             "enum" : [ "CREATE", "UPDATE" ]
           }
-        },
-        "required" : [ "changelogType", "externalId", "timestamp" ]
+        }
       },
       "ChangelogSearchRequest" : {
         "type" : "object",
@@ -1951,6 +2074,7 @@
           },
           "externalIds" : {
             "type" : "array",
+            "description" : "Only for business partners with the given array of external IDs. Ignored if empty.",
             "items" : {
               "type" : "string"
             },
@@ -1983,8 +2107,7 @@
             "type" : "integer",
             "format" : "int32"
           }
-        },
-        "required" : [ "checkedByExternalDataSource", "confidenceLevel", "lastConfidenceCheckAt", "nextConfidenceCheckAt", "numberOfSharingMembers", "sharedByOwner" ]
+        }
       },
       "ErrorInfoChangeLogOutputError" : {
         "type" : "object",
@@ -2004,7 +2127,6 @@
             "description" : "Key (externalId) of the entity that failed"
           }
         },
-        "required" : [ "errorCode", "message" ],
         "title" : "ErrorInfo"
       },
       "GateErrorResponse" : {
@@ -2013,27 +2135,22 @@
         "properties" : {
           "timestamp" : {
             "type" : "string",
-            "format" : "date-time",
-            "description" : "Timestamp of the error occurrence"
+            "format" : "date-time"
           },
           "status" : {
             "type" : "string",
-            "description" : "HTTP status of the error response",
-            "enum" : [ "100 CONTINUE", "101 SWITCHING_PROTOCOLS", "102 PROCESSING", "103 EARLY_HINTS", "103 CHECKPOINT", "200 OK", "201 CREATED", "202 ACCEPTED", "203 NON_AUTHORITATIVE_INFORMATION", "204 NO_CONTENT", "205 RESET_CONTENT", "206 PARTIAL_CONTENT", "207 MULTI_STATUS", "208 ALREADY_REPORTED", "226 IM_USED", "300 MULTIPLE_CHOICES", "301 MOVED_PERMANENTLY", "302 FOUND", "302 MOVED_TEMPORARILY", "303 SEE_OTHER", "304 NOT_MODIFIED", "305 USE_PROXY", "307 TEMPORARY_REDIRECT", "308 PERMANENT_REDIRECT", "400 BAD_REQUEST", "401 UNAUTHORIZED", "402 PAYMENT_REQUIRED", "403 FORBIDDEN", "404 NOT_FOUND", "405 METHOD_NOT_ALLOWED", "406 NOT_ACCEPTABLE", "407 PROXY_AUTHENTICATION_REQUIRED", "408 REQUEST_TIMEOUT", "409 CONFLICT", "410 GONE", "411 LENGTH_REQUIRED", "412 PRECONDITION_FAILED", "413 PAYLOAD_TOO_LARGE", "413 REQUEST_ENTITY_TOO_LARGE", "414 URI_TOO_LONG", "414 REQUEST_URI_TOO_LONG", "415 UNSUPPORTED_MEDIA_TYPE", "416 REQUESTED_RANGE_NOT_SATISFIABLE", "417 EXPECTATION_FAILED", "418 I_AM_A_TEAPOT", "419 INSUFFICIENT_SPACE_ON_RESOURCE", "420 METHOD_FAILURE", "421 DESTINATION_LOCKED", "422 UNPROCESSABLE_ENTITY", "423 LOCKED", "424 FAILED_DEPENDENCY", "425 TOO_EARLY", "426 UPGRADE_REQUIRED", "428 PRECONDITION_REQUIRED", "429 TOO_MANY_REQUESTS", "431 REQUEST_HEADER_FIELDS_TOO_LARGE", "451 UNAVAILABLE_FOR_LEGAL_REASONS", "500 INTERNAL_SERVER_ERROR", "501 NOT_IMPLEMENTED", "502 BAD_GATEWAY", "503 SERVICE_UNAVAILABLE", "504 GATEWAY_TIMEOUT", "505 HTTP_VERSION_NOT_SUPPORTED", "506 VARIANT_ALSO_NEGOTIATES", "507 INSUFFICIENT_STORAGE", "508 LOOP_DETECTED", "509 BANDWIDTH_LIMIT_EXCEEDED", "510 NOT_EXTENDED", "511 NETWORK_AUTHENTICATION_REQUIRED" ]
+            "enum" : [ "100 CONTINUE", "101 SWITCHING_PROTOCOLS", "102 PROCESSING", "103 EARLY_HINTS", "200 OK", "201 CREATED", "202 ACCEPTED", "203 NON_AUTHORITATIVE_INFORMATION", "204 NO_CONTENT", "205 RESET_CONTENT", "206 PARTIAL_CONTENT", "207 MULTI_STATUS", "208 ALREADY_REPORTED", "226 IM_USED", "300 MULTIPLE_CHOICES", "301 MOVED_PERMANENTLY", "302 FOUND", "303 SEE_OTHER", "304 NOT_MODIFIED", "307 TEMPORARY_REDIRECT", "308 PERMANENT_REDIRECT", "400 BAD_REQUEST", "401 UNAUTHORIZED", "402 PAYMENT_REQUIRED", "403 FORBIDDEN", "404 NOT_FOUND", "405 METHOD_NOT_ALLOWED", "406 NOT_ACCEPTABLE", "407 PROXY_AUTHENTICATION_REQUIRED", "408 REQUEST_TIMEOUT", "409 CONFLICT", "410 GONE", "411 LENGTH_REQUIRED", "412 PRECONDITION_FAILED", "413 CONTENT_TOO_LARGE", "413 PAYLOAD_TOO_LARGE", "414 URI_TOO_LONG", "415 UNSUPPORTED_MEDIA_TYPE", "416 REQUESTED_RANGE_NOT_SATISFIABLE", "417 EXPECTATION_FAILED", "418 I_AM_A_TEAPOT", "421 MISDIRECTED_REQUEST", "422 UNPROCESSABLE_CONTENT", "422 UNPROCESSABLE_ENTITY", "423 LOCKED", "424 FAILED_DEPENDENCY", "425 TOO_EARLY", "426 UPGRADE_REQUIRED", "428 PRECONDITION_REQUIRED", "429 TOO_MANY_REQUESTS", "431 REQUEST_HEADER_FIELDS_TOO_LARGE", "451 UNAVAILABLE_FOR_LEGAL_REASONS", "500 INTERNAL_SERVER_ERROR", "501 NOT_IMPLEMENTED", "502 BAD_GATEWAY", "503 SERVICE_UNAVAILABLE", "504 GATEWAY_TIMEOUT", "505 HTTP_VERSION_NOT_SUPPORTED", "506 VARIANT_ALSO_NEGOTIATES", "507 INSUFFICIENT_STORAGE", "508 LOOP_DETECTED", "509 BANDWIDTH_LIMIT_EXCEEDED", "510 NOT_EXTENDED", "511 NETWORK_AUTHENTICATION_REQUIRED" ]
           },
           "error" : {
             "type" : "array",
-            "description" : "List of error messages",
             "items" : {
               "type" : "string"
             }
           },
           "path" : {
-            "type" : "string",
-            "description" : "Request path where the error occurred"
+            "type" : "string"
           }
-        },
-        "required" : [ "error", "path", "status", "timestamp" ]
+        }
       },
       "GeoCoordinateDto" : {
         "type" : "object",
@@ -2054,8 +2171,22 @@
             "format" : "double",
             "description" : "Altitude, if applicable"
           }
-        },
-        "required" : [ "latitude", "longitude" ]
+        }
+      },
+      "LegalEntityGoldenRecordRelationDto" : {
+        "type" : "object",
+        "properties" : {
+          "relationType" : {
+            "type" : "string",
+            "enum" : [ "IsAlternativeHeadquarterFor", "IsManagedBy", "IsOwnedBy" ]
+          },
+          "sourceBpn" : {
+            "type" : "string"
+          },
+          "targetBpn" : {
+            "type" : "string"
+          }
+        }
       },
       "LegalEntityRepresentationInputDto" : {
         "type" : "object",
@@ -2082,8 +2213,7 @@
               "$ref" : "#/components/schemas/BusinessPartnerStateDto"
             }
           }
-        },
-        "required" : [ "states" ]
+        }
       },
       "LegalEntityRepresentationOutputDto" : {
         "type" : "object",
@@ -2113,9 +2243,26 @@
             "items" : {
               "$ref" : "#/components/schemas/BusinessPartnerStateDto"
             }
+          },
+          "goldenRecordRelations" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/LegalEntityGoldenRecordRelationDto"
+            }
           }
         },
-        "required" : [ "bpnL", "confidenceCriteria", "legalEntityBpn", "states" ]
+        "required" : [ "bpnL" ]
+      },
+      "LegalEntityScriptVariantDto" : {
+        "type" : "object",
+        "properties" : {
+          "legalName" : {
+            "type" : "string"
+          },
+          "shortName" : {
+            "type" : "string"
+          }
+        }
       },
       "PageChangeLogDtoChangelogGateDto" : {
         "type" : "object",
@@ -2143,6 +2290,7 @@
           },
           "content" : {
             "type" : "array",
+            "description" : "Collection of results in the page",
             "items" : {
               "$ref" : "#/components/schemas/ChangelogGateDto"
             }
@@ -2159,8 +2307,7 @@
               "$ref" : "#/components/schemas/ErrorInfoChangeLogOutputError"
             }
           }
-        },
-        "required" : [ "content", "contentSize", "errors", "invalidEntries", "page", "totalElements", "totalPages" ]
+        }
       },
       "PageDtoBusinessPartnerInputDto" : {
         "type" : "object",
@@ -2193,8 +2340,7 @@
               "$ref" : "#/components/schemas/BusinessPartnerInputDto"
             }
           }
-        },
-        "required" : [ "content", "contentSize", "page", "totalElements", "totalPages" ]
+        }
       },
       "PageDtoBusinessPartnerOutputDto" : {
         "type" : "object",
@@ -2227,8 +2373,7 @@
               "$ref" : "#/components/schemas/BusinessPartnerOutputDto"
             }
           }
-        },
-        "required" : [ "content", "contentSize", "page", "totalElements", "totalPages" ]
+        }
       },
       "PageDtoRelationDto" : {
         "type" : "object",
@@ -2261,8 +2406,7 @@
               "$ref" : "#/components/schemas/RelationDto"
             }
           }
-        },
-        "required" : [ "content", "contentSize", "page", "totalElements", "totalPages" ]
+        }
       },
       "PageDtoRelationOutputDto" : {
         "type" : "object",
@@ -2295,8 +2439,7 @@
               "$ref" : "#/components/schemas/RelationOutputDto"
             }
           }
-        },
-        "required" : [ "content", "contentSize", "page", "totalElements", "totalPages" ]
+        }
       },
       "PageDtoRelationSharingStateDto" : {
         "type" : "object",
@@ -2329,8 +2472,40 @@
               "$ref" : "#/components/schemas/RelationSharingStateDto"
             }
           }
-        },
-        "required" : [ "content", "contentSize", "page", "totalElements", "totalPages" ]
+        }
+      },
+      "PageDtoRelationV6Dto" : {
+        "type" : "object",
+        "description" : "Paginated collection of results",
+        "properties" : {
+          "totalElements" : {
+            "type" : "integer",
+            "format" : "int64",
+            "description" : "Total number of all results in all pages"
+          },
+          "totalPages" : {
+            "type" : "integer",
+            "format" : "int32",
+            "description" : "Total number pages"
+          },
+          "page" : {
+            "type" : "integer",
+            "format" : "int32",
+            "description" : "Current page number"
+          },
+          "contentSize" : {
+            "type" : "integer",
+            "format" : "int32",
+            "description" : "Number of results in the page"
+          },
+          "content" : {
+            "type" : "array",
+            "description" : "Collection of results in the page",
+            "items" : {
+              "$ref" : "#/components/schemas/RelationV6Dto"
+            }
+          }
+        }
       },
       "PageDtoSharingStateDto" : {
         "type" : "object",
@@ -2363,8 +2538,42 @@
               "$ref" : "#/components/schemas/SharingStateDto"
             }
           }
-        },
-        "required" : [ "content", "contentSize", "page", "totalElements", "totalPages" ]
+        }
+      },
+      "PhysicalAddressScriptVariantDto" : {
+        "type" : "object",
+        "properties" : {
+          "postalCode" : {
+            "type" : "string"
+          },
+          "city" : {
+            "type" : "string"
+          },
+          "district" : {
+            "type" : "string"
+          },
+          "street" : {
+            "$ref" : "#/components/schemas/StreetDto"
+          },
+          "companyPostalCode" : {
+            "type" : "string"
+          },
+          "industrialZone" : {
+            "type" : "string"
+          },
+          "building" : {
+            "type" : "string"
+          },
+          "floor" : {
+            "type" : "string"
+          },
+          "door" : {
+            "type" : "string"
+          },
+          "taxJurisdictionCode" : {
+            "type" : "string"
+          }
+        }
       },
       "PhysicalPostalAddressDto" : {
         "type" : "object",
@@ -2441,12 +2650,11 @@
               "type" : "string"
             }
           }
-        },
-        "required" : [ "externalIds" ]
+        }
       },
       "RelationDto" : {
         "type" : "object",
-        "description" : "A relation from one business partner (the source) to another business partner (the target). ",
+        "description" : "A relation from one business partner (the source) to another business partner (the target).",
         "properties" : {
           "externalId" : {
             "type" : "string",
@@ -2455,7 +2663,7 @@
           "relationType" : {
             "type" : "string",
             "description" : "The type of relation between the business partners",
-            "enum" : [ "IsManagedBy", "IsAlternativeHeadquarterFor", "IsOwnedBy" ]
+            "enum" : [ "IsManagedBy", "IsAlternativeHeadquarterFor", "IsOwnedBy", "IsReplacedBy" ]
           },
           "businessPartnerSourceExternalId" : {
             "type" : "string",
@@ -2464,6 +2672,16 @@
           "businessPartnerTargetExternalId" : {
             "type" : "string",
             "description" : "The business partner to which this relation goes (the target)"
+          },
+          "validityPeriods" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/RelationValidityPeriodDto"
+            }
+          },
+          "reasonCode" : {
+            "type" : "string",
+            "description" : "The technical key of the reason code describing why the relation was established. The list of reason codes is available from the golden record Pool."
           },
           "updatedAt" : {
             "type" : "string",
@@ -2475,31 +2693,46 @@
             "format" : "date-time",
             "description" : "The time when this relation was created"
           }
-        },
-        "required" : [ "businessPartnerSourceExternalId", "businessPartnerTargetExternalId", "createdAt", "externalId", "relationType", "updatedAt" ]
+        }
       },
       "RelationOutputDto" : {
         "type" : "object",
+        "description" : "A relation from one business partner (the source) to another business partner (the target).",
         "properties" : {
           "externalId" : {
-            "type" : "string"
+            "type" : "string",
+            "description" : "The identifier with which to reference this relation"
           },
           "relationType" : {
             "type" : "string",
-            "enum" : [ "IsAlternativeHeadquarterFor", "IsManagedBy", "IsOwnedBy" ]
+            "description" : "The type of relation between the business partners",
+            "enum" : [ "IsAlternativeHeadquarterFor", "IsManagedBy", "IsOwnedBy", "IsReplacedBy" ]
           },
-          "sourceBpnL" : {
-            "type" : "string"
+          "sourceBpn" : {
+            "type" : "string",
+            "description" : "The business partner from which the relation emerges (the source)"
           },
-          "targetBpnL" : {
-            "type" : "string"
+          "targetBpn" : {
+            "type" : "string",
+            "description" : "The business partner to which this relation goes (the target)"
+          },
+          "validityPeriods" : {
+            "type" : "array",
+            "description" : "A relation validity describes a timeframe in which a relation is active.",
+            "items" : {
+              "$ref" : "#/components/schemas/RelationValidityPeriodDto"
+            }
+          },
+          "reasonCode" : {
+            "type" : "string",
+            "description" : "The technical key of the reason code describing why the relation was established. The list of reason codes is available from the golden record Pool."
           },
           "updatedAt" : {
             "type" : "string",
-            "format" : "date-time"
+            "format" : "date-time",
+            "description" : "The time when this relation was last modified"
           }
-        },
-        "required" : [ "externalId", "relationType", "sourceBpnL", "targetBpnL", "updatedAt" ]
+        }
       },
       "RelationOutputSearchRequest" : {
         "type" : "object",
@@ -2507,34 +2740,29 @@
         "properties" : {
           "externalIds" : {
             "type" : "array",
-            "description" : "Only show relations with the given external identifiers",
             "items" : {
               "type" : "string"
             }
           },
           "relationType" : {
             "type" : "string",
-            "description" : "Only show relations of the given type",
-            "enum" : [ "IsAlternativeHeadquarterFor", "IsManagedBy", "IsOwnedBy" ]
+            "enum" : [ "IsAlternativeHeadquarterFor", "IsManagedBy", "IsOwnedBy", "IsReplacedBy" ]
           },
-          "sourceBpnLs" : {
+          "sourceBpns" : {
             "type" : "array",
-            "description" : "Only show relations which have the given business partners as sources",
             "items" : {
               "type" : "string"
             }
           },
-          "targetBpnLs" : {
+          "targetBpns" : {
             "type" : "array",
-            "description" : "Only show relations which have the given business partners as targets",
             "items" : {
               "type" : "string"
             }
           },
           "updatedAtFrom" : {
             "type" : "string",
-            "format" : "date-time",
-            "description" : "Only show relations which have been modified after the given time stamp"
+            "format" : "date-time"
           }
         }
       },
@@ -2543,48 +2771,73 @@
         "description" : "A request to create a new relation between two business partners",
         "properties" : {
           "externalId" : {
-            "type" : "string",
-            "description" : "The identifier under which the relation will be referenced. If not given a unique identifier will be automatically assigned by the system. A given external identifier needs be unique."
+            "type" : "string"
           },
           "relationType" : {
             "type" : "string",
-            "description" : "The type of relation that should be created",
-            "enum" : [ "IsManagedBy", "IsAlternativeHeadquarterFor", "IsOwnedBy" ]
+            "enum" : [ "IsManagedBy", "IsAlternativeHeadquarterFor", "IsOwnedBy", "IsReplacedBy" ]
           },
           "businessPartnerSourceExternalId" : {
-            "type" : "string",
-            "description" : "The external identifier of the business partner from which the relation should emerge (the source)"
+            "type" : "string"
           },
           "businessPartnerTargetExternalId" : {
-            "type" : "string",
-            "description" : "The external identifier of the business partner to which the relation should point (the target)"
+            "type" : "string"
           }
-        },
-        "required" : [ "businessPartnerSourceExternalId", "businessPartnerTargetExternalId", "relationType" ]
+        }
       },
       "RelationPutEntry" : {
         "type" : "object",
         "description" : "A request to update the content of the given business partner relation",
         "properties" : {
           "externalId" : {
-            "type" : "string",
-            "description" : "The external identifier of the business partner relation to update"
+            "type" : "string"
           },
           "relationType" : {
             "type" : "string",
-            "description" : "The type the relation should be",
-            "enum" : [ "IsManagedBy", "IsAlternativeHeadquarterFor", "IsOwnedBy" ]
+            "enum" : [ "IsManagedBy", "IsAlternativeHeadquarterFor", "IsOwnedBy", "IsReplacedBy" ]
           },
           "businessPartnerSourceExternalId" : {
-            "type" : "string",
-            "description" : "The external identifier of the business partner from which the relation should emerge (the source)"
+            "type" : "string"
           },
           "businessPartnerTargetExternalId" : {
+            "type" : "string"
+          },
+          "reasonCode" : {
             "type" : "string",
-            "description" : "The external identifier of the business partner to which the relation should point (the target)"
+            "description" : "The technical key of the reason code describing why the relation was established. The list of reason codes is available from the golden record Pool."
+          },
+          "validityPeriods" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/RelationValidityPeriodDto"
+            }
           }
-        },
-        "required" : [ "businessPartnerSourceExternalId", "businessPartnerTargetExternalId", "externalId", "relationType" ]
+        }
+      },
+      "RelationPutEntryV6" : {
+        "type" : "object",
+        "description" : "A request to update the content of the given business partner relation",
+        "properties" : {
+          "externalId" : {
+            "type" : "string"
+          },
+          "relationType" : {
+            "type" : "string",
+            "enum" : [ "IsManagedBy", "IsAlternativeHeadquarterFor", "IsOwnedBy", "IsReplacedBy" ]
+          },
+          "businessPartnerSourceExternalId" : {
+            "type" : "string"
+          },
+          "businessPartnerTargetExternalId" : {
+            "type" : "string"
+          },
+          "validityPeriods" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/RelationValidityPeriodDto"
+            }
+          }
+        }
       },
       "RelationPutRequest" : {
         "type" : "object",
@@ -2596,8 +2849,7 @@
               "$ref" : "#/components/schemas/RelationPutEntry"
             }
           }
-        },
-        "required" : [ "relations" ]
+        }
       },
       "RelationPutResponse" : {
         "type" : "object",
@@ -2608,8 +2860,7 @@
               "$ref" : "#/components/schemas/RelationDto"
             }
           }
-        },
-        "required" : [ "upsertedRelations" ]
+        }
       },
       "RelationSearchRequest" : {
         "type" : "object",
@@ -2617,34 +2868,29 @@
         "properties" : {
           "externalIds" : {
             "type" : "array",
-            "description" : "Only show relations with the given external identifiers",
             "items" : {
               "type" : "string"
             }
           },
           "relationType" : {
             "type" : "string",
-            "description" : "Only show relations of the given type",
-            "enum" : [ "IsManagedBy", "IsAlternativeHeadquarterFor", "IsOwnedBy" ]
+            "enum" : [ "IsManagedBy", "IsAlternativeHeadquarterFor", "IsOwnedBy", "IsReplacedBy" ]
           },
           "businessPartnerSourceExternalIds" : {
             "type" : "array",
-            "description" : "Only show relations which have the given business partners as sources",
             "items" : {
               "type" : "string"
             }
           },
           "businessPartnerTargetExternalIds" : {
             "type" : "array",
-            "description" : "Only show relations which have the given business partners as targets",
             "items" : {
               "type" : "string"
             }
           },
           "updatedAtFrom" : {
             "type" : "string",
-            "format" : "date-time",
-            "description" : "Only show relations which have been modified after the given time stamp"
+            "format" : "date-time"
           }
         }
       },
@@ -2678,8 +2924,47 @@
             "format" : "date-time",
             "description" : "The orchestrator task identifier that was created"
           }
-        },
-        "required" : [ "externalId", "sharingStateType", "updatedAt" ]
+        }
+      },
+      "RelationV6Dto" : {
+        "type" : "object",
+        "description" : "A relation from one business partner (the source) to another business partner (the target). ",
+        "properties" : {
+          "externalId" : {
+            "type" : "string"
+          },
+          "relationType" : {
+            "type" : "string",
+            "enum" : [ "IsManagedBy", "IsAlternativeHeadquarterFor", "IsOwnedBy", "IsReplacedBy" ]
+          },
+          "businessPartnerSourceExternalId" : {
+            "type" : "string"
+          },
+          "businessPartnerTargetExternalId" : {
+            "type" : "string"
+          },
+          "updatedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "createdAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        }
+      },
+      "RelationValidityPeriodDto" : {
+        "type" : "object",
+        "properties" : {
+          "validFrom" : {
+            "type" : "string",
+            "format" : "date"
+          },
+          "validTo" : {
+            "type" : "string",
+            "format" : "date"
+          }
+        }
       },
       "SharingStateDto" : {
         "type" : "object",
@@ -2717,8 +3002,7 @@
             "format" : "date-time",
             "description" : "The time when the sharing state has been last updated"
           }
-        },
-        "required" : [ "externalId", "sharingStateType", "updatedAt" ]
+        }
       },
       "SiteRepresentationInputDto" : {
         "type" : "object",
@@ -2737,8 +3021,7 @@
               "$ref" : "#/components/schemas/BusinessPartnerStateDto"
             }
           }
-        },
-        "required" : [ "states" ]
+        }
       },
       "SiteRepresentationOutputDto" : {
         "type" : "object",
@@ -2761,8 +3044,15 @@
               "$ref" : "#/components/schemas/BusinessPartnerStateDto"
             }
           }
-        },
-        "required" : [ "confidenceCriteria", "siteBpn", "states" ]
+        }
+      },
+      "SiteScriptVariantDto" : {
+        "type" : "object",
+        "properties" : {
+          "name" : {
+            "type" : "string"
+          }
+        }
       },
       "StatsAddressTypesResponse" : {
         "type" : "object",
@@ -2783,8 +3073,7 @@
             "type" : "integer",
             "format" : "int32"
           }
-        },
-        "required" : [ "additionalTotal", "legalAndSiteTotal", "legalTotal", "siteTotal" ]
+        }
       },
       "StatsConfidenceCriteriaResponse" : {
         "type" : "object",
@@ -2809,8 +3098,7 @@
             "type" : "number",
             "format" : "float"
           }
-        },
-        "required" : [ "checkedByExternalDataSourceTotal", "confidenceLevelAverage", "numberOfBusinessPartnersAverage", "sharedByOwnerTotal", "uniqueTotal" ]
+        }
       },
       "StatsSharingStatesResponse" : {
         "type" : "object",
@@ -2835,8 +3123,7 @@
             "type" : "integer",
             "format" : "int32"
           }
-        },
-        "required" : [ "errorTotal", "initialTotal", "pendingTotal", "readyTotal", "successTotal" ]
+        }
       },
       "StatsStagesResponse" : {
         "type" : "object",
@@ -2849,8 +3136,7 @@
             "type" : "integer",
             "format" : "int32"
           }
-        },
-        "required" : [ "inputTotal", "outputTotal" ]
+        }
       },
       "StreetDto" : {
         "type" : "object",
@@ -2899,13 +3185,13 @@
         "type" : "oauth2",
         "flows" : {
           "clientCredentials" : {
-            "tokenUrl" : "http://localhost:8180/realms/CX-Central/protocol/openid-connect/token",
+            "tokenUrl" : "http://localhost:8180/realms/BPDM/protocol/openid-connect/token",
             "scopes" : { }
           },
           "authorizationCode" : {
-            "authorizationUrl" : "http://localhost:8180/realms/CX-Central/protocol/openid-connect/auth",
-            "tokenUrl" : "http://localhost:8180/realms/CX-Central/protocol/openid-connect/token",
-            "refreshUrl" : "http://localhost:8180/realms/CX-Central/protocol/openid-connect/token",
+            "authorizationUrl" : "http://localhost:8180/realms/BPDM/protocol/openid-connect/auth",
+            "tokenUrl" : "http://localhost:8180/realms/BPDM/protocol/openid-connect/token",
+            "refreshUrl" : "http://localhost:8180/realms/BPDM/protocol/openid-connect/token",
             "scopes" : { }
           }
         }

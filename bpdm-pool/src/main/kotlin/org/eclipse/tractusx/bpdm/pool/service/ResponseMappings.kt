@@ -30,11 +30,11 @@ import org.eclipse.tractusx.bpdm.pool.entity.*
 import org.springframework.data.domain.Page
 
 
-fun <S, T> Page<S>.toDto(dtoContent: Collection<T>): PageDto<T> {
+fun <S: Any, T> Page<S>.toDto(dtoContent: Collection<T>): PageDto<T> {
     return PageDto(this.totalElements, this.totalPages, this.number, this.numberOfElements, dtoContent)
 }
 
-fun <S, T> Page<S>.toDto(map: (S) -> T): PageDto<T> {
+fun <S: Any, T> Page<S>.toDto(map: (S) -> T): PageDto<T> {
     return PageDto(totalElements, totalPages, number, numberOfElements, content.map { map(it) })
 }
 
@@ -43,27 +43,27 @@ fun LegalEntityDb.toMatchDto(score: Float): LegalEntityMatchVerboseDto {
     return LegalEntityMatchVerboseDto(
         score = score,
         legalEntity = this.toDto(),
-        legalAddress = legalAddress.toDto(),
+        legalAddress = legalAddress.toInvariantDto(),
     )
 }
 
 fun LegalEntityDb.toUpsertDto(entryId: String?): LegalEntityPartnerCreateVerboseDto {
     return LegalEntityPartnerCreateVerboseDto(
-        legalEntity = toDto(),
-        legalAddress = legalAddress.toDto(),
+        legalEntity = toLegalEntityWithLegalAddress(),
         index = entryId
     )
 }
 
 fun LegalEntityDb.toLegalEntityWithLegalAddress(): LegalEntityWithLegalAddressVerboseDto {
     return LegalEntityWithLegalAddressVerboseDto(
-        legalAddress = legalAddress.toDto(),
-        legalEntity = toDto()
+        legalAddress = legalAddress.toInvariantDto(),
+        header = toDto(),
+        scriptVariants = scriptVariants.toLegalEntityScriptVariants(legalAddress.scriptVariants),
     )
 }
 
-fun LegalEntityDb.toDto(): LegalEntityVerboseDto {
-    return LegalEntityVerboseDto(
+fun LegalEntityDb.toDto(): LegalEntityHeaderVerboseDto {
+    return LegalEntityHeaderVerboseDto(
         bpnl = bpn,
         legalName = legalName.value,
         legalShortName = legalName.shortName,
@@ -130,8 +130,15 @@ fun AddressStateDb.toDto(): AddressStateVerboseDto {
     return AddressStateVerboseDto(validFrom, validTo, type.toDto())
 }
 
-fun LogisticAddressDb.toDto(): LogisticAddressVerboseDto {
-    return LogisticAddressVerboseDto(
+fun LogisticAddressDb.toUpdateDto(): AddressPartnerUpdateVerboseDto{
+    return AddressPartnerUpdateVerboseDto(
+        address = toInvariantDto(),
+        scriptVariants = scriptVariants.map { it.toLogisticAddressScriptVariant() }
+    )
+}
+
+fun LogisticAddressDb.toInvariantDto(): LogisticAddressInvariantVerboseDto {
+    return LogisticAddressInvariantVerboseDto(
         bpna = bpn,
         bpnLegalEntity = legalEntity?.bpn,
         bpnSite = site?.bpn,
@@ -140,6 +147,7 @@ fun LogisticAddressDb.toDto(): LogisticAddressVerboseDto {
         name = name,
         states = states.map { it.toDto() },
         identifiers = identifiers.map { it.toDto() },
+        relations = startAddressRelations.plus(endAddressRelations).map { it.toDto() },
         physicalPostalAddress = physicalPostalAddress.toDto(),
         alternativePostalAddress = alternativePostalAddress?.toDto(),
         confidenceCriteria = confidenceCriteria.toDto(),
@@ -148,23 +156,10 @@ fun LogisticAddressDb.toDto(): LogisticAddressVerboseDto {
     )
 }
 
-fun LogisticAddressDb.toLegalAddressResponse(): LegalAddressVerboseDto {
-    return LegalAddressVerboseDto(
-        physicalPostalAddress = physicalPostalAddress.toDto(),
-        alternativePostalAddress = alternativePostalAddress?.toDto(),
-        bpnLegalEntity = legalEntity?.bpn!!,
-        createdAt = createdAt,
-        updatedAt = updatedAt
-    )
-}
-
-fun LogisticAddressDb.toMainAddressResponse(): MainAddressVerboseDto {
-    return MainAddressVerboseDto(
-        physicalPostalAddress = physicalPostalAddress.toDto(),
-        alternativePostalAddress = alternativePostalAddress?.toDto(),
-        bpnSite = site?.bpn!!,
-        createdAt = createdAt,
-        updatedAt = updatedAt
+fun LogisticAddressDb.toDto(): LogisticAddressVerboseDto {
+    return LogisticAddressVerboseDto(
+        address = toInvariantDto(),
+        scriptVariants = scriptVariants.map { it.toLogisticAddressScriptVariant() }
     )
 }
 
@@ -216,19 +211,20 @@ private fun StreetDb.toDto(): StreetDto {
 }
 
 fun LogisticAddressDb.toMatchDto(score: Float): AddressMatchVerboseDto {
-    return AddressMatchVerboseDto(score, this.toDto())
+    return AddressMatchVerboseDto(score, this.toInvariantDto())
 }
 
 fun LogisticAddressDb.toCreateResponse(index: String?): AddressPartnerCreateVerboseDto {
     return AddressPartnerCreateVerboseDto(
-        address = toDto(),
+        address = toInvariantDto(),
+        scriptVariants = scriptVariants.map { it.toLogisticAddressScriptVariant() },
         index = index
     )
 }
 
 fun SiteDb.toMatchDto(): SiteMatchVerboseDto {
     return SiteMatchVerboseDto(
-        mainAddress = this.mainAddress.toDto(),
+        mainAddress = this.mainAddress.toInvariantDto(),
         site = this.toDto(),
     )
 }
@@ -236,7 +232,7 @@ fun SiteDb.toMatchDto(): SiteMatchVerboseDto {
 fun SiteDb.toUpsertDto(entryId: String?): SitePartnerCreateVerboseDto {
     return SitePartnerCreateVerboseDto(
         site = toDto(),
-        mainAddress = mainAddress.toDto(),
+        mainAddress = mainAddress.toInvariantDto(),
         index = entryId
     )
 }
@@ -249,6 +245,7 @@ fun SiteDb.toDto(): SiteVerboseDto {
         bpnLegalEntity = legalEntity.bpn,
         confidenceCriteria = confidenceCriteria.toDto(),
         isParticipantData = legalEntity.isCatenaXMemberData,
+        scriptVariants = toSiteScriptVariants(),
         createdAt = createdAt,
         updatedAt = updatedAt,
     )
@@ -256,7 +253,6 @@ fun SiteDb.toDto(): SiteVerboseDto {
 
 fun SiteDb.toPoolDto(): SiteWithMainAddressVerboseDto {
     return SiteWithMainAddressVerboseDto(
-
         site = SiteVerboseDto(
             bpn,
             name,
@@ -264,10 +260,11 @@ fun SiteDb.toPoolDto(): SiteWithMainAddressVerboseDto {
             bpnLegalEntity = legalEntity.bpn,
             confidenceCriteria = confidenceCriteria.toDto(),
             isParticipantData = legalEntity.isCatenaXMemberData,
+            scriptVariants = toSiteScriptVariants(),
             createdAt = createdAt,
             updatedAt = updatedAt,
         ),
-        mainAddress = mainAddress.toDto()
+        mainAddress = mainAddress.toInvariantDto()
     )
 }
 
@@ -276,25 +273,35 @@ fun GeographicCoordinateDb.toDto(): GeoCoordinateDto {
     return GeoCoordinateDto(longitude, latitude, altitude)
 }
 
-fun LegalEntityClassificationDb.toDto(): LegalEntityClassificationVerboseDto {
-    return LegalEntityClassificationVerboseDto(value, code, type.toDto())
-}
-
 fun RelationDb.toDto(): RelationVerboseDto {
     return RelationVerboseDto(
         type = type,
         businessPartnerSourceBpnl = startNode.bpn,
         businessPartnerTargetBpnl = endNode.bpn,
-        isActive = isActive
+        validityPeriods = validityPeriods.sortedBy { it.validFrom }.map { it.toDto() },
+        reasonCode = reasonCode?.technicalKey
+    )
+}
+
+fun AddressRelationDb.toDto(): AddressRelationVerboseDto {
+    return AddressRelationVerboseDto(
+        type = type,
+        businessPartnerSourceBpna = startAddress.bpn,
+        businessPartnerTargetBpna = endAddress.bpn,
+        validityPeriods = validityPeriods.sortedBy { it.validFrom }.map { it.toDto() },
+        reasonCode = reasonCode?.technicalKey
+    )
+}
+
+fun RelationValidityPeriodDb.toDto(): RelationValidityPeriod {
+    return RelationValidityPeriod(
+        validFrom = validFrom,
+        validTo = validTo,
     )
 }
 
 fun PartnerChangelogEntryDb.toDto(): ChangelogEntryVerboseDto {
     return ChangelogEntryVerboseDto(bpn, businessPartnerType, updatedAt, changelogType)
-}
-
-fun RegionDb.toRegionDto(): RegionDto {
-    return RegionDto(countryCode = countryCode, regionCode = regionCode, regionName = regionName)
 }
 
 fun RegionDb.toCountrySubdivisionDto(): CountrySubdivisionDto {
@@ -305,7 +312,7 @@ fun ConfidenceCriteriaDb.toDto(): ConfidenceCriteriaDto =
     ConfidenceCriteriaDto(
         sharedByOwner,
         checkedByExternalDataSource,
-        numberOfBusinessPartners,
+        numberOfSharingMembers,
         lastConfidenceCheckAt,
         nextConfidenceCheckAt,
         confidenceLevel
@@ -325,4 +332,59 @@ fun getAddressType(logisticAddress: LogisticAddressDb): AddressType {
 
         else -> throw IllegalStateException("Unable to determine address type.")
     }
+}
+
+private fun List<LegalEntityScriptVariantDb>.toLegalEntityScriptVariants(legalAddressVariants: List<LogisticAddressScriptVariantDb>): List<LegalEntityScriptVariantDto>{
+    val legalEntityVariantsByCode = associateBy { it.scriptCode.technicalKey }
+    val legalAddressVariantsByCode = legalAddressVariants.associateBy { it.scriptCode.technicalKey }
+
+    val allKeys = legalEntityVariantsByCode.keys.plus(legalAddressVariantsByCode.keys)
+    return allKeys.mapNotNull { key ->
+        val legalEntityProperties = legalEntityVariantsByCode[key] ?: return@mapNotNull null
+        val legalAddressProperties = legalAddressVariantsByCode[key]
+        LegalEntityScriptVariantDto(key, legalEntityProperties.legalName, legalEntityProperties.shortName, legalAddressProperties?.toDto() ?: PostalAddressScriptVariantDto())
+    }
+}
+
+private fun SiteDb.toSiteScriptVariants(): List<SiteScriptVariantDto>{
+    return scriptVariants.toSiteScriptVariants(mainAddress.scriptVariants)
+}
+
+private fun List<SiteScriptVariantDb>.toSiteScriptVariants(mainAddressVariants: List<LogisticAddressScriptVariantDb>): List<SiteScriptVariantDto>{
+    val siteVariantsByCode = associateBy { it.scriptCode.technicalKey }
+    val mainAddressVariantsByCode = mainAddressVariants.associateBy { it.scriptCode.technicalKey }
+
+    val allKeys = siteVariantsByCode.keys.plus(mainAddressVariantsByCode.keys)
+    return allKeys.mapNotNull { key ->
+        val siteProperties = siteVariantsByCode[key] ?: return@mapNotNull null
+        val mainAddressProperties = mainAddressVariantsByCode[key]
+        SiteScriptVariantDto(key, siteProperties.name , mainAddressProperties?.toDto() ?: PostalAddressScriptVariantDto())
+    }
+}
+
+private fun LogisticAddressScriptVariantDb.toLogisticAddressScriptVariant(): LogisticAddressScriptVariantDto{
+    return LogisticAddressScriptVariantDto(scriptCode.technicalKey, toDto())
+}
+
+private fun LogisticAddressScriptVariantDb.toDto(): PostalAddressScriptVariantDto{
+    return PostalAddressScriptVariantDto(name, physicalAddress.toDto(), alternativeAddress?.toDto())
+}
+
+private fun PhysicalAddressScriptVariantDb.toDto(): PhysicalAddressScriptVariantDto{
+    return PhysicalAddressScriptVariantDto(
+        postalCode = postalCode,
+        city = city,
+        district = district,
+        street = street?.toDto(),
+        companyPostalCode = companyPostalCode,
+        industrialZone = industrialZone,
+        building = building,
+        floor = floor,
+        door = door,
+        taxJurisdictionCode = taxJurisdictionCode
+    )
+}
+
+private fun AlternativeAddressScriptVariantDb.toDto(): AlternativeAddressScriptVariantDto{
+    return AlternativeAddressScriptVariantDto(postalCode, city, deliveryServiceQualifier, deliveryServiceNumber)
 }

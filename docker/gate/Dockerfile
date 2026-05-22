@@ -25,8 +25,7 @@ RUN --mount=type=cache,target=/root/.m2 mvn -B -U clean package -pl bpdm-gate -a
 
 FROM eclipse-temurin:21-jre-alpine
 RUN apk update && \
-    apk add --upgrade "libpng>=1.6.54-r0" && \
-    apk add --upgrade "gnutls=3.8.12-r0" && \
+    apk upgrade && \
     rm -rf /var/cache/apk/*
 ENV HOME=/home/app
 COPY --from=build $HOME/bpdm-gate/target/bpdm-gate.jar /usr/local/lib/bpdm/app.jar

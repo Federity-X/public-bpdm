@@ -25,7 +25,7 @@ import io.swagger.v3.oas.annotations.media.Schema
 data class RelationVerboseDto(
 
     @get:Schema(description = "The type of relation between the Legal Entities")
-    val type: RelationType,
+    val type: LegalEntityRelationType,
 
     @get:Schema(description = "BPN of partner from which the relation emerges (the source)")
     val businessPartnerSourceBpnl: String,
@@ -33,6 +33,7 @@ data class RelationVerboseDto(
     @get:Schema(description = "BPN of partner to which this relation goes (the target)")
     val businessPartnerTargetBpnl: String,
 
-    @get:Schema(description = "Status of the relation")
-    val isActive: Boolean
+    val validityPeriods: Collection<RelationValidityPeriod>,
+
+    val reasonCode: String?
 )

@@ -55,7 +55,7 @@ class RelationsGoldenRecordTaskDb(
     var updatedAt: DbTimestamp,
     @ManyToOne
     @JoinColumn(name = "gate_record_id", nullable = false, foreignKey = ForeignKey(name = "fk_tasks_gate_records"))
-    var gateRecord: GateRecordDb,
+    var gateRecord: SharingMemberRecordDb,
 
     @Embedded
     val processingState: ProcessingState,
@@ -67,8 +67,9 @@ class RelationsGoldenRecordTaskDb(
         with(newBusinessPartnerRelations) {
             BusinessPartnerRelations (
                 relationType = relationType.also { businessPartnerRelations.relationType = it },
-                businessPartnerSourceBpnl = businessPartnerSourceBpnl.also { businessPartnerRelations.businessPartnerSourceBpnl = it },
-                businessPartnerTargetBpnl = businessPartnerTargetBpnl.also { businessPartnerRelations.businessPartnerTargetBpnl = it }
+                businessPartnerSourceBpn = businessPartnerSourceBpn.also { businessPartnerRelations.businessPartnerSourceBpn = it },
+                businessPartnerTargetBpn = businessPartnerTargetBpn.also { businessPartnerRelations.businessPartnerTargetBpn = it },
+                reasonCode = reasonCode.also { businessPartnerRelations.reasonCode = it }
             )
         }
     }
@@ -106,10 +107,19 @@ class RelationsGoldenRecordTaskDb(
     class BusinessPartnerRelations(
         @Column(name = "relation_type", nullable = false)
         var relationType: RelationType,
-        @Column(name = "source_bpnl", nullable = false)
-        var businessPartnerSourceBpnl: String,
-        @Column(name = "target_bpnl", nullable = false)
-        var businessPartnerTargetBpnl: String
+        @Column(name = "source_bpn", nullable = false)
+        var businessPartnerSourceBpn: String,
+        @Column(name = "target_bpn", nullable = false)
+        var businessPartnerTargetBpn: String,
+        @ElementCollection(fetch = FetchType.LAZY)
+        @CollectionTable(
+            name = "relation_task_validity_periods",
+            joinColumns = [JoinColumn(name = "relation_id", foreignKey = ForeignKey(name = "fk_task_relation_validity_periods_relation"))],
+            indexes = [Index(name = "idx_relation_task_validity_periods_relation_id", columnList = "relation_id")]
+        )
+        var validityPeriods: MutableList<RelationValidityPeriod> = mutableListOf(),
+        @Column(name = "reason_code")
+        var reasonCode: String?
     )
 
 
@@ -131,7 +141,8 @@ class RelationsGoldenRecordTaskDb(
     enum class RelationType {
         IsAlternativeHeadquarterFor,
         IsManagedBy,
-        IsOwnedBy
+        IsOwnedBy,
+        IsReplacedBy
     }
 
 }

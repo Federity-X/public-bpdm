@@ -19,6 +19,7 @@
 
 package org.eclipse.tractusx.bpdm.orchestrator.service
 
+import org.eclipse.tractusx.bpdm.orchestrator.entity.RelationValidityPeriod
 import org.eclipse.tractusx.bpdm.orchestrator.entity.RelationsGoldenRecordTaskDb
 import org.eclipse.tractusx.bpdm.orchestrator.entity.RelationsTaskErrorDb
 import org.eclipse.tractusx.orchestrator.api.model.BusinessPartnerRelations
@@ -32,13 +33,21 @@ class RelationsRequestMapper {
     fun toBusinessPartnerRelations(businessPartnerRelations: BusinessPartnerRelations) =
         with(businessPartnerRelations){
             RelationsGoldenRecordTaskDb.BusinessPartnerRelations(
-                relationType = when(relationType){
-                    RelationType.IsAlternativeHeadquarterFor ->  RelationsGoldenRecordTaskDb.RelationType.IsAlternativeHeadquarterFor
-                    RelationType.IsManagedBy ->  RelationsGoldenRecordTaskDb.RelationType.IsManagedBy
-                    RelationType.IsOwnedBy ->  RelationsGoldenRecordTaskDb.RelationType.IsOwnedBy
+                relationType = when (relationType) {
+                    RelationType.IsAlternativeHeadquarterFor -> RelationsGoldenRecordTaskDb.RelationType.IsAlternativeHeadquarterFor
+                    RelationType.IsManagedBy -> RelationsGoldenRecordTaskDb.RelationType.IsManagedBy
+                    RelationType.IsOwnedBy -> RelationsGoldenRecordTaskDb.RelationType.IsOwnedBy
+                    RelationType.IsReplacedBy -> RelationsGoldenRecordTaskDb.RelationType.IsReplacedBy
                 },
-                businessPartnerSourceBpnl = businessPartnerSourceBpnl,
-                businessPartnerTargetBpnl = businessPartnerTargetBpnl
+                businessPartnerSourceBpn = businessPartnerSourceBpn,
+                businessPartnerTargetBpn = businessPartnerTargetBpn,
+                validityPeriods = businessPartnerRelations.validityPeriods.map {
+                    RelationValidityPeriod(
+                        validFrom = it.validFrom,
+                        validTo = it.validTo
+                    )
+                }.toMutableList(),
+                reasonCode = reasonCode
             )
         }
 

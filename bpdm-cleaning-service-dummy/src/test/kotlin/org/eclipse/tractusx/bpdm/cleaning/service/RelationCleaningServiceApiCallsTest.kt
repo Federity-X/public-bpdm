@@ -19,21 +19,20 @@
 
 package org.eclipse.tractusx.bpdm.cleaning.service
 
-import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.tomakehurst.wiremock.admin.model.ServeEventQuery
 import com.github.tomakehurst.wiremock.client.WireMock.*
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension
 import com.github.tomakehurst.wiremock.stubbing.Scenario
 import com.github.tomakehurst.wiremock.stubbing.StubMapping
+import org.assertj.core.api.Assertions.assertThat
 import org.eclipse.tractusx.bpdm.cleaning.config.CleaningServiceConfigProperties
 import org.eclipse.tractusx.bpdm.cleaning.config.OrchestratorConfigProperties
 import org.eclipse.tractusx.orchestrator.api.ApiCommons
-import org.assertj.core.api.Assertions.assertThat
 import org.eclipse.tractusx.orchestrator.api.model.*
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.extension.RegisterExtension
-import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
 import org.springframework.beans.factory.annotation.Autowired
@@ -41,8 +40,10 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import tools.jackson.databind.json.JsonMapper
 import java.time.Instant
-import java.util.UUID
+import java.time.LocalDate
+import java.util.*
 
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -51,7 +52,7 @@ import java.util.UUID
 @ActiveProfiles("test")
 class RelationCleaningServiceApiCallsTest @Autowired constructor(
     private val relationCleaningServiceDummy: RelationCleaningServiceDummy,
-    private val jacksonObjectMapper: ObjectMapper,
+    private val jsonMapper: JsonMapper,
     private val cleaningServiceConfigProperties: CleaningServiceConfigProperties
 ) {
 
@@ -85,7 +86,7 @@ class RelationCleaningServiceApiCallsTest @Autowired constructor(
             post(urlPathEqualTo(ORCHESTRATOR_RESERVE_TASKS_URL))
                 .inScenario(RESERVATION_SCENARIO)
                 .whenScenarioStateIs(RESERVED_STATE)
-                .willReturn(okJson(jacksonObjectMapper.writeValueAsString(TaskRelationsStepReservationResponse(emptyList(), Instant.now()))))
+                .willReturn(okJson(jsonMapper.writeValueAsString(TaskRelationsStepReservationResponse(emptyList(), Instant.now()))))
         )
     }
 
@@ -116,7 +117,7 @@ class RelationCleaningServiceApiCallsTest @Autowired constructor(
                 .willSetStateTo(RESERVED_STATE)
                 .willReturn(
                     okJson(
-                        jacksonObjectMapper.writeValueAsString(
+                        jsonMapper.writeValueAsString(
                             TaskRelationsStepReservationResponse(
                                 listOf(TaskRelationsStepReservationEntryDto(fixedTaskId, UUID.randomUUID().toString(), relation)),
                                 Instant.now()
@@ -138,14 +139,21 @@ class RelationCleaningServiceApiCallsTest @Autowired constructor(
         val serveEvents = orchestratorMockApi.getServeEvents(ServeEventQuery.forStubMapping(stubMapping)).requests
         assertEquals(1, serveEvents.size)
         val actualRequest = serveEvents.first().request
-        return jacksonObjectMapper.readValue(actualRequest.body, TaskRelationsStepResultRequest::class.java)
+        return jsonMapper.readValue(actualRequest.body, TaskRelationsStepResultRequest::class.java)
     }
 
     private fun createRelation(idSuffix: String, relationType: RelationType): BusinessPartnerRelations {
         return BusinessPartnerRelations(
             relationType = relationType,
-            businessPartnerSourceBpnl = "BPNL_SOURCE_$idSuffix",
-            businessPartnerTargetBpnl = "BPNL_TARGET_$idSuffix"
+            businessPartnerSourceBpn = "BPNL_SOURCE_$idSuffix",
+            businessPartnerTargetBpn = "BPNL_TARGET_$idSuffix",
+            validityPeriods = listOf(
+                RelationValidityPeriod(
+                    validFrom = LocalDate.parse("2020-01-01"),
+                    validTo = LocalDate.parse("2030-01-01")
+                )
+            ),
+            reasonCode = "reason code"
         )
     }
 }

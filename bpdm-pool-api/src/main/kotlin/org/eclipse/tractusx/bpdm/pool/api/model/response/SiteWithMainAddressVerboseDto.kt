@@ -20,14 +20,11 @@
 package org.eclipse.tractusx.bpdm.pool.api.model.response
 
 import com.fasterxml.jackson.annotation.JsonUnwrapped
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize
 import io.swagger.v3.oas.annotations.media.Schema
 import org.eclipse.tractusx.bpdm.common.dto.openapidescription.SiteDescription
-import org.eclipse.tractusx.bpdm.common.service.DataClassUnwrappedJsonDeserializer
-import org.eclipse.tractusx.bpdm.pool.api.model.LogisticAddressVerboseDto
+import org.eclipse.tractusx.bpdm.pool.api.model.LogisticAddressInvariantVerboseDto
 import org.eclipse.tractusx.bpdm.pool.api.model.SiteVerboseDto
 
-@JsonDeserialize(using = DataClassUnwrappedJsonDeserializer::class)
 @Schema(description = SiteDescription.header)
 data class SiteWithMainAddressVerboseDto(
 
@@ -36,5 +33,5 @@ data class SiteWithMainAddressVerboseDto(
 
     // TODO OpenAPI description for complex field does not work!!
     @Schema(description = SiteDescription.mainAddress)
-    val mainAddress: LogisticAddressVerboseDto,
+    val mainAddress: LogisticAddressInvariantVerboseDto,
 )

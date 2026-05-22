@@ -19,7 +19,7 @@
 
 package org.eclipse.tractusx.bpdm.pool.service
 
-import org.eclipse.tractusx.bpdm.pool.api.model.RelationType
+import org.eclipse.tractusx.bpdm.pool.api.model.LegalEntityRelationType
 import org.eclipse.tractusx.bpdm.pool.dto.UpsertResult
 import org.eclipse.tractusx.bpdm.pool.entity.LegalEntityDb
 import org.eclipse.tractusx.bpdm.pool.entity.RelationDb
@@ -33,32 +33,48 @@ class OwnedByRelationUpsertService(
     private val relationRepository: RelationRepository
 ): IRelationUpsertStrategyService {
 
+
     override fun upsertRelation(upsertRequest: IRelationUpsertStrategyService.UpsertRequest): UpsertResult<RelationDb> {
         val proposedSource = upsertRequest.source
         val proposedTarget = upsertRequest.target
 
-        validateSingleParent(upsertRequest.source, upsertRequest.target)
-        validateNoCycles(upsertRequest.source, upsertRequest.target)
+        validateSingleParent(upsertRequest)
+        validateNoCycles(upsertRequest)
 
 
         val result = relationUpsertService.upsertRelation(
-            RelationUpsertService.UpsertRequest(proposedSource, proposedTarget, RelationType.IsOwnedBy)
+            RelationUpsertService.UpsertRequest(
+                source = proposedSource,
+                target = proposedTarget,
+                legalEntityRelationType = LegalEntityRelationType.IsOwnedBy,
+                validityPeriods = upsertRequest.validityPeriods,
+                existingRelation = upsertRequest.existingRelation,
+                reasonCode = upsertRequest.reasonCode,
+            )
         )
 
         return result
     }
 
 
-    private fun validateSingleParent(child: LegalEntityDb, parent: LegalEntityDb){
-        val allChildRelations = relationRepository.findByTypeAndStartNode(RelationType.IsOwnedBy, child)
-        allChildRelations.forEach { relation ->
+    private fun validateSingleParent(upsertRequest: IRelationUpsertStrategyService.UpsertRequest){
+        val child = upsertRequest.source
+        val parent = upsertRequest.target
+
+        val allChildRelations = relationRepository.findByTypeAndStartNode(LegalEntityRelationType.IsOwnedBy, child)
+        val allOverlappingChildRelations = relationUpsertService.filterOverlappingRelations(upsertRequest, allChildRelations)
+
+        allOverlappingChildRelations.forEach { relation ->
             if(relation.endNode != parent)
                 throw BpdmValidationException("Multiple owning entities assigned to the same owned entity: legal entity '${child.bpn}' can't be owned by '${parent.bpn}' as its already owned by '${relation.endNode.bpn}'")
         }
     }
 
-    private fun validateNoCycles(child: LegalEntityDb, parent: LegalEntityDb){
-        val allOwningAncestors = getAllAncestors(parent)
+    private fun validateNoCycles(upsertRequest: IRelationUpsertStrategyService.UpsertRequest){
+        val child = upsertRequest.source
+        val parent = upsertRequest.target
+
+        val allOwningAncestors = getAllAncestors(upsertRequest)
         if(allOwningAncestors.contains(child))
             throw BpdmValidationException("Circular ownership detected in entity hierarchy: legal entity '${child.bpn}' is (transitively) owning '${parent.bpn}' and therefore can't be owned by '${parent.bpn}'.")
     }
@@ -66,23 +82,28 @@ class OwnedByRelationUpsertService(
     /**
      * Fetch the whole owning parent tree (ancestors, parents of parents) of the given legal entity
      */
-    private fun getAllAncestors(legalEntity: LegalEntityDb): Set<LegalEntityDb>{
+    private fun getAllAncestors(upsertRequest: IRelationUpsertStrategyService.UpsertRequest): Set<LegalEntityDb>{
+        val parentLegalEntity = upsertRequest.target
         val allParents = mutableSetOf<LegalEntityDb>()
         val parentProcessingQueue =  ArrayDeque<LegalEntityDb>()
 
-        parentProcessingQueue.addFirst(legalEntity)
+        parentProcessingQueue.addFirst(parentLegalEntity)
 
         lateinit var currentParent: LegalEntityDb
 
         do{
             currentParent = parentProcessingQueue.removeFirst()
             allParents.add(currentParent)
+
             // Fetch Relations in which the currently processed parent node is a child
-            val parentParentRelations = relationRepository.findByTypeAndStartNode(RelationType.IsOwnedBy, currentParent)
-            val parentsOfCurrent = parentParentRelations.map { it.endNode }
+            val parentParentRelations = relationRepository.findByTypeAndStartNode(LegalEntityRelationType.IsOwnedBy, currentParent)
+            val overlappingParentParentRelations = relationUpsertService.filterOverlappingRelations(upsertRequest, parentParentRelations)
+
+            val parentsOfCurrent = overlappingParentParentRelations.map { it.endNode }
             parentsOfCurrent.forEach { parentProcessingQueue.addFirst(it) }
         }while (parentProcessingQueue.isNotEmpty())
 
         return allParents
     }
+
 }

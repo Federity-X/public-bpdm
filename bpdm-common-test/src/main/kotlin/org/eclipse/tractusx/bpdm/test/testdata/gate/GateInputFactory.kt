@@ -23,31 +23,47 @@ import com.neovisionaries.i18n.CountryCode
 import org.eclipse.tractusx.bpdm.common.dto.AddressType
 import org.eclipse.tractusx.bpdm.common.dto.BusinessPartnerRole
 import org.eclipse.tractusx.bpdm.common.dto.GeoCoordinateDto
-import org.eclipse.tractusx.bpdm.common.model.BusinessStateType
 import org.eclipse.tractusx.bpdm.common.model.DeliveryServiceType
 import org.eclipse.tractusx.bpdm.gate.api.model.*
 import org.eclipse.tractusx.bpdm.gate.api.model.request.BusinessPartnerInputRequest
+import org.eclipse.tractusx.bpdm.gate.api.model.request.RelationPutEntry
 import org.eclipse.tractusx.bpdm.gate.api.model.response.AddressRepresentationInputDto
 import org.eclipse.tractusx.bpdm.gate.api.model.response.LegalEntityRepresentationInputDto
 import org.eclipse.tractusx.bpdm.gate.api.model.response.SiteRepresentationInputDto
-import java.time.Duration
-import java.time.Instant
-import java.time.ZoneOffset
+import java.time.LocalDate
 import kotlin.random.Random
 
 class GateInputFactory(
     private val testMetadata: TestMetadata,
     private val testRunData: TestRunData?
 ) {
-    val genericFullValidWithSiteWithoutAnyBpn = createAllFieldsFilled("genericFullValidWithSiteWithoutAnyBpn")
-    { it.withoutAnyBpn().withAddressType(null) }
-
     fun createAllFieldsFilled(seed: String, transform: (BusinessPartnerInputRequest) -> BusinessPartnerInputRequest = {it}): InputTestData {
         return InputTestData(seed, transform(SeededTestDataCreator(seed).createAllFieldsFilled()))
     }
 
     fun createFullValid(seed: String, externalId: String = seed, withTestRunContext: Boolean = true): BusinessPartnerInputRequest {
         return SeededTestDataCreator(seed).createAllFieldsFilled().copy(externalId = testRunData?.toExternalId(externalId)?.takeIf { withTestRunContext } ?: externalId)
+    }
+
+    fun buildRelation(
+        externalId: String,
+        relationType: RelationType,
+        businessPartnerSourceExternalId: String,
+        businessPartnerTargetExternalId: String,
+        seed: String = externalId,
+    ): RelationPutEntry{
+        val longSeed = seed.hashCode().toLong()
+        val random = Random(longSeed)
+
+        return RelationPutEntry(
+            externalId = externalId,
+            relationType = relationType,
+            businessPartnerSourceExternalId = businessPartnerSourceExternalId,
+            businessPartnerTargetExternalId = businessPartnerTargetExternalId,
+            reasonCode = testMetadata.reasonCodes.random(random),
+            validityPeriods = listOf(
+                RelationValidityPeriodDto(LocalDate.of(1970, 1, 1), LocalDate.of(9999, 12, 31)))
+        )
     }
 
     inner class SeededTestDataCreator(
@@ -85,18 +101,6 @@ class GateInputFactory(
                     alternativePostalAddress = createAlternativeAddress()
                 )
             )
-        }
-
-
-        private fun createIdentifiers(): List<BusinessPartnerIdentifierDto>{
-            return listRange.map { testMetadata.identifierTypes.random(random) }
-                .mapIndexed{ index, type -> BusinessPartnerIdentifierDto(type = type, value = "Identifier Value $seed $index", issuingBody = "Issuing Body $seed $index") }
-        }
-
-        private fun createStates(): List<BusinessPartnerStateDto>{
-            return random.nextTime().let {
-                listRange.runningFold(Pair(it, it.plus(random.nextDuration()))){ current, _ -> Pair(current.second, current.second.plus(random.nextDuration())) }
-            }.map { (validFrom, validTo) -> BusinessPartnerStateDto(validFrom = validFrom, validTo = validTo, BusinessStateType.entries.random(random)) }
         }
 
         private fun createPhysicalAddress(): PhysicalPostalAddressDto{
@@ -141,11 +145,6 @@ class GateInputFactory(
                 deliveryServiceQualifier = "Delivery Service Qualifier $seed"
             )
         }
-
-        private fun Random.nextInstant() = Instant.ofEpochSecond(nextLong(0, 365241780471))
-        private fun Random.nextTime() = nextInstant().atOffset(ZoneOffset.UTC).toLocalDateTime()
-        private fun Random.nextDuration() = Duration.ofHours(nextLong(0, 10000))
-
     }
 }
 
@@ -157,7 +156,8 @@ data class InputTestData(
 data class TestMetadata(
     val identifierTypes: List<String>,
     val legalForms: List<String>,
-    val adminAreas: List<String>
+    val adminAreas: List<String>,
+    val reasonCodes: List<String>
 )
 
 fun BusinessPartnerInputRequest.withoutAnyBpn() = withoutLegalEntityBpn().withoutSiteBpn().withoutAddressBpn()

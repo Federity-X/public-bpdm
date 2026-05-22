@@ -33,9 +33,9 @@ import org.eclipse.tractusx.bpdm.gate.api.model.RelationOutputDto
 import org.eclipse.tractusx.bpdm.gate.api.model.SharableRelationType
 import org.eclipse.tractusx.bpdm.gate.api.model.request.ChangelogSearchRequest
 import org.eclipse.tractusx.bpdm.gate.api.model.request.RelationOutputSearchRequest
-import org.eclipse.tractusx.bpdm.gate.api.model.request.RelationPutEntry
 import org.eclipse.tractusx.bpdm.gate.api.model.request.RelationPutRequest
 import org.eclipse.tractusx.bpdm.pool.api.client.PoolApiClient
+import org.eclipse.tractusx.bpdm.pool.api.model.RelationValidityPeriod
 import org.eclipse.tractusx.bpdm.pool.api.model.RelationVerboseDto
 import org.eclipse.tractusx.bpdm.test.system.utils.StepUtils
 import org.eclipse.tractusx.bpdm.test.system.utils.TestRepository
@@ -50,7 +50,7 @@ import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import org.eclipse.tractusx.bpdm.gate.api.model.RelationType as GateRelationType
-import org.eclipse.tractusx.bpdm.pool.api.model.RelationType as PoolRelationType
+import org.eclipse.tractusx.bpdm.pool.api.model.LegalEntityRelationType as PoolRelationType
 
 
 class BusinessPartnerRelationStepDefs(
@@ -63,7 +63,6 @@ class BusinessPartnerRelationStepDefs(
 ): SpringTestRunConfiguration() {
 
     private val anyTime: Instant = OffsetDateTime.of(2025, 1, 1, 1, 1, 1, 1, ZoneOffset.UTC).toInstant()
-
     /**
      * Since BPNs are created on-the-fly by the Pool we can't assign a certain BPN directly to a shared record
      * Therefore we associate the BPN tag in the Gherkin description with the BPN after it has been generated
@@ -164,8 +163,8 @@ class BusinessPartnerRelationStepDefs(
      *
      * Check both legal entities that are referenced in the source and target of the relation
      */
-    @Then("Pool has relation of type {string}, source {string} and target {string}")
-    fun `then pool has relation`(relationTypeString: String, sourceBpnTag: String, targetBpnTag: String) {
+    @Then("Pool has relation of type {string}, source {string} and target {string} with content {string}")
+    fun `then pool has relation`(relationTypeString: String, sourceBpnTag: String, targetBpnTag: String, relationExternalId: String) {
         val sourceBpnTag = sourceBpnTag.toScenarioInstance()
         val targetBpnTag = targetBpnTag.toScenarioInstance()
         val relationType = PoolRelationType.valueOf(relationTypeString)
@@ -175,10 +174,17 @@ class BusinessPartnerRelationStepDefs(
         val sourceLegalEntity = poolApiClient.legalEntities.getLegalEntity(sourceBpn)
         val targetLegalEntity = poolApiClient.legalEntities.getLegalEntity(targetBpn)
 
-        val expectedRelation = RelationVerboseDto(relationType, sourceBpn, targetBpn, true)
+        val basedOnInput =  inputFactory.buildRelation(relationExternalId, GateRelationType.entries.random(), sourceBpn, targetBpn)
+        val expectedRelation = RelationVerboseDto(
+            type = relationType,
+            businessPartnerSourceBpnl = sourceBpn,
+            businessPartnerTargetBpnl = targetBpn,
+            validityPeriods = basedOnInput.validityPeriods.map { RelationValidityPeriod(it.validFrom, it.validTo) },
+            reasonCode = basedOnInput.reasonCode
+        )
 
-        val sourceRelations = sourceLegalEntity.legalEntity.relations
-        val targetRelations = targetLegalEntity.legalEntity.relations
+        val sourceRelations = sourceLegalEntity.header.relations
+        val targetRelations = targetLegalEntity.header.relations
 
         Assertions.assertThat(sourceRelations).contains(expectedRelation)
         Assertions.assertThat(targetRelations).contains(expectedRelation)
@@ -198,7 +204,16 @@ class BusinessPartnerRelationStepDefs(
 
         val relationOutput = gateClient.relationOutput.postSearch(RelationOutputSearchRequest(externalIds = listOf(externalId))).content.single()
 
-        val expectedRelation = RelationOutputDto(externalId, relationType, sourceBpn, targetBpn, anyTime)
+        val basedOnInput =  inputFactory.buildRelation(externalId, GateRelationType.entries.random(), sourceBpn, targetBpn)
+        val expectedRelation = RelationOutputDto(
+                externalId = externalId,
+                relationType = relationType,
+                sourceBpn = sourceBpn,
+                targetBpn = targetBpn,
+                validityPeriods = basedOnInput.validityPeriods,
+                reasonCode = basedOnInput.reasonCode,
+                updatedAt = anyTime,
+            )
 
         Assertions.assertThat(relationOutput)
             .usingRecursiveComparison()
@@ -224,7 +239,7 @@ class BusinessPartnerRelationStepDefs(
         sourceExternalId: String,
         targetExternalId: String
     ){
-        val relationInputRequest = RelationPutEntry(relationExternalId, relationType, sourceExternalId, targetExternalId)
+        val relationInputRequest = inputFactory.buildRelation(relationExternalId, relationType, sourceExternalId, targetExternalId)
         gateClient.relation.put(true, RelationPutRequest(listOf(relationInputRequest)))
         val taskId = stepUtils.waitForRelationTask(relationExternalId)
 

@@ -36,4 +36,6 @@ interface PoolApiClient {
     val members: MembersApiClient
 
     val participants: DataSpaceParticipantsApiClient
+
+    val businessPartners: BusinessPartnersApiClient
 }

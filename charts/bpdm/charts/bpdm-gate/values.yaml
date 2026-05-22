@@ -69,7 +69,7 @@ ingress:
 
 resources:
   limits:
-    cpu: 1000m
+    cpu: 1
     memory: 1Gi
   requests:
     cpu: 100m
@@ -129,17 +129,3 @@ applicationConfig:
 
 # Used to overwrite the secret property values of the application configuration
 applicationSecrets:
-  spring:
-    datasource:
-      # Change this password for production
-      password: &postgresPass  bpdm
-
-postgres:
-  enabled: true
-  auth:
-    database: bpdm
-    username: bpdm
-    password: *postgresPass
-
-centralidp:
-  enabled: true

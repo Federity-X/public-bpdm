@@ -20,15 +20,18 @@
 package org.eclipse.tractusx.bpdm.pool.service
 
 import org.eclipse.tractusx.bpdm.pool.api.model.DataSpaceParticipantDto
-import org.eclipse.tractusx.bpdm.pool.api.model.RelationType
+import org.eclipse.tractusx.bpdm.pool.api.model.LegalEntityRelationType
 import org.eclipse.tractusx.bpdm.pool.api.model.request.DataSpaceParticipantUpdateRequest
 import org.eclipse.tractusx.bpdm.pool.dto.UpsertResult
 import org.eclipse.tractusx.bpdm.pool.entity.LegalEntityDb
 import org.eclipse.tractusx.bpdm.pool.entity.RelationDb
+import org.eclipse.tractusx.bpdm.pool.entity.RelationValidityPeriodDb
 import org.eclipse.tractusx.bpdm.pool.exception.BpdmValidationException
 import org.eclipse.tractusx.bpdm.pool.repository.RelationRepository
+import org.eclipse.tractusx.bpdm.pool.service.RelationUpsertService.TimePeriod
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.LocalDate
 
 @Service
 class ManagedRelationUpsertService(
@@ -39,28 +42,54 @@ class ManagedRelationUpsertService(
 
     @Transactional
     override fun upsertRelation(upsertRequest: IRelationUpsertStrategyService.UpsertRequest): UpsertResult<RelationDb> {
-        val (proposedSource, proposedTarget) = upsertRequest
 
-        validateNoChain(proposedSource, proposedTarget)
-        validateSingleManager(proposedSource)
-        validateManagingEntityIsParticipant(proposedTarget)
+        validateManagingEntityIsParticipant(upsertRequest.target)
+        validateSingleManager(upsertRequest)
+        validateNoChain(upsertRequest)
+        validateNoHistoricChanges(upsertRequest)
 
         val result = relationUpsertService.upsertRelation(
-            RelationUpsertService.UpsertRequest(proposedSource, proposedTarget, RelationType.IsManagedBy)
+            RelationUpsertService.UpsertRequest(
+                source = upsertRequest.source,
+                target = upsertRequest.target,
+                legalEntityRelationType = LegalEntityRelationType.IsManagedBy,
+                validityPeriods = upsertRequest.validityPeriods,
+                existingRelation = upsertRequest.existingRelation,
+                reasonCode = upsertRequest.reasonCode
+            )
         )
-
-        makeManagedEntityParticipantIfRequired(proposedSource)
+        makeManagedEntityParticipantIfRequired(upsertRequest.source)
 
         return result
-
     }
 
-    private fun validateNoChain(source: LegalEntityDb, target: LegalEntityDb) {
-        val sourceRelations = relationRepository.findInSourceOrTarget(RelationType.IsManagedBy, source)
-        val targetRelations = relationRepository.findInSourceOrTarget(RelationType.IsManagedBy, target)
+    private fun validateSingleManager(upsertRequest: IRelationUpsertStrategyService.UpsertRequest){
+        val source = upsertRequest.source
 
-        val sourceIsTarget = sourceRelations.any { it.endNode.id == source.id }
-        val targetIsSource = targetRelations.any { it.startNode.id == target.id }
+        val existingManagers = relationRepository.findByTypeAndStartNode(LegalEntityRelationType.IsManagedBy, source)
+        val overlappingExistingManagers = relationUpsertService.filterOverlappingRelations(upsertRequest, existingManagers)
+
+        if (overlappingExistingManagers.isNotEmpty()) {
+            val managerBpns = overlappingExistingManagers.joinToString { it.endNode.bpn }
+            throw BpdmValidationException(
+                "Invalid 'IsManagedBy' relation: The Managed Legal Entity with BPNL '${source.bpn}' is already managed by another Managing Legal Entity '${managerBpns}'. " +
+                        "A Managed Legal Entity may only have one Managing Legal Entity at a time."
+            )
+        }
+    }
+
+    private fun validateNoChain(upsertRequest: IRelationUpsertStrategyService.UpsertRequest) {
+        val source = upsertRequest.source
+        val target = upsertRequest.target
+
+        val sourceRelations = relationRepository.findInSourceOrTarget(LegalEntityRelationType.IsManagedBy, source)
+        val targetRelations = relationRepository.findInSourceOrTarget(LegalEntityRelationType.IsManagedBy, target)
+
+        val overlappingSourceRelations = relationUpsertService.filterOverlappingRelations(upsertRequest, sourceRelations)
+        val overlappingTargetRelations = relationUpsertService.filterOverlappingRelations(upsertRequest, targetRelations)
+
+        val sourceIsTarget = overlappingSourceRelations.any { it.endNode.id == source.id }
+        val targetIsSource = overlappingTargetRelations.any { it.startNode.id == target.id }
 
         when {
             sourceIsTarget -> throw BpdmValidationException(
@@ -74,19 +103,6 @@ class ManagedRelationUpsertService(
         }
     }
 
-    private fun validateSingleManager(source: LegalEntityDb) {
-        val existingManagers = relationRepository.findInSourceOrTarget(RelationType.IsManagedBy, source)
-            .filter { it.startNode.id == source.id }
-
-        if (existingManagers.isNotEmpty()) {
-            val managerBpns = existingManagers.joinToString { it.endNode.bpn }
-            throw BpdmValidationException(
-                "Invalid 'IsManagedBy' relation: The Managed Legal Entity with BPNL '${source.bpn}' is already managed by another Managing Legal Entity '${managerBpns}'. " +
-                        "A Managed Legal Entity may only have one Managing Legal Entity at a time."
-            )
-        }
-    }
-
     private fun validateManagingEntityIsParticipant(target: LegalEntityDb) {
         if (!target.isCatenaXMemberData) {
             throw BpdmValidationException(
@@ -94,6 +110,39 @@ class ManagedRelationUpsertService(
                         "Only dataspace participants can manage other entities."
             )
         }
+    }
+
+    private fun validateNoHistoricChanges(upsertRequest: IRelationUpsertStrategyService.UpsertRequest){
+        validateNoHistoricChanges(upsertRequest.existingRelation?.validityPeriods ?: emptyList(), upsertRequest.validityPeriods)
+    }
+
+    private fun validateNoHistoricChanges(existingValidityPeriods: Collection<RelationValidityPeriodDb>, newValidityPeriods: Collection<RelationValidityPeriodDb>){
+        val nowTime = LocalDate.now()
+
+        val existingTimePeriods = existingValidityPeriods.map { TimePeriod.fromUnlimited(it.validFrom, it.validTo) }
+        val newTimePeriods = newValidityPeriods.map { TimePeriod.fromUnlimited(it.validFrom, it.validTo) }
+
+        newTimePeriods
+            .filter { it.validFrom < nowTime }
+            .forEach { newTimePeriod ->
+                val matchingExistingTimePeriod = existingTimePeriods.find { it.validFrom == newTimePeriod.validFrom }
+
+                if(matchingExistingTimePeriod == null){
+                    throw BpdmValidationException("Can't add a new relation validity period from ${newTimePeriod.validFrom} as it lies in the past.")
+                }
+
+                if(newTimePeriod.validTo < nowTime && matchingExistingTimePeriod.validTo != newTimePeriod.validTo){
+                    throw BpdmValidationException("Existing relation validity period from ${matchingExistingTimePeriod.validFrom} can't be limited to past date.")
+                }
+            }
+
+        existingTimePeriods
+            .filter { it.validFrom < nowTime }
+            .forEach { existingTimePeriod ->
+                if(newTimePeriods.none { it.validFrom == existingTimePeriod.validFrom }){
+                    throw BpdmValidationException("Existing relation validity period from ${existingTimePeriod.validFrom} can't be deleted as it lies in the past.")
+                }
+            }
     }
 
     private fun makeManagedEntityParticipantIfRequired(source: LegalEntityDb) {
@@ -105,5 +154,4 @@ class ManagedRelationUpsertService(
             )
         }
     }
-
 }

@@ -20,5 +20,5 @@
 package org.eclipse.tractusx.bpdm.pool.api.model
 
 enum class SyncType{
-    SAAS_IMPORT
+    SHARING_MEMBER_RECORDS
 }
