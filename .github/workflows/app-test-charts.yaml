@@ -241,5 +241,6 @@ jobs:
           helm repo add tractusx-dev https://eclipse-tractusx.github.io/charts/dev
           helm install -f charts/bpdm/ci/test-upgrade-values.yaml  bpdm-test tractusx-dev/bpdm $UPGRADE_FROM
           helm dependency update charts/bpdm
+          kubectl delete statefulset bpdm-postgres || true
           helm upgrade -f charts/bpdm/ci/test-upgrade-values.yaml  bpdm-test charts/bpdm
 
