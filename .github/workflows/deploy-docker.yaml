@@ -46,6 +46,7 @@ env:
 
 jobs:
   docker:
+    if: github.repository == 'eclipse-tractusx/bpdm'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
