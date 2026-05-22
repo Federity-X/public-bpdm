@@ -94,7 +94,7 @@ class OAuthSecurityConfig(
         // using JWT bearer tokens (not cookies) with STATELESS session policy, so CSRF attacks
         // are not applicable. See Spring Security docs on CSRF for non-browser clients.
         // https://docs.spring.io/spring-security/reference/servlet/exploits/csrf.html#csrf-when
-        http.csrf { csrf -> csrf.ignoringRequestMatchers(AntPathRequestMatcher.antMatcher("/**")) }
+        http.csrf { csrf -> csrf.ignoringRequestMatchers("/**") }
         http.cors {}
         http.sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
         http.authorizeHttpRequests {
