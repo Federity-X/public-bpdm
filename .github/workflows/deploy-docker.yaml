@@ -114,25 +114,25 @@ jobs:
             echo "tags=${FEATURE_TAGS}"
           fi
 
-      - name: DockerHub login
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
-        with:
-          username: ${{ secrets.DOCKER_HUB_USER }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+      # - name: DockerHub login
+      #   uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+      #   with:
+      #     username: ${{ secrets.DOCKER_HUB_USER }}
+      #     password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       - name: Build and push
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f #v7.1.0
         with:
           context: .
           platforms: linux/amd64, linux/arm64
-          push: true
+          push: false
           file: ${{ inputs.dockerfilePath }}/Dockerfile
           tags: ${{ steps.dockerTags.outputs.tags }}
 
-      - name: Update Docker Hub description
-        uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa #v5.0.0
-        with:
-          username: ${{ secrets.DOCKER_HUB_USER }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
-          repository: ${{ env.IMAGE_NAMESPACE }}/${{ env.IMAGE_NAME }}
-          readme-filepath: ${{ inputs.dockerfilePath }}/DOCKER_NOTICE.md
+      # - name: Update Docker Hub description
+      #   uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa #v5.0.0
+      #   with:
+      #     username: ${{ secrets.DOCKER_HUB_USER }}
+      #     password: ${{ secrets.DOCKER_HUB_TOKEN }}
+      #     repository: ${{ env.IMAGE_NAMESPACE }}/${{ env.IMAGE_NAME }}
+      #     readme-filepath: ${{ inputs.dockerfilePath }}/DOCKER_NOTICE.md
